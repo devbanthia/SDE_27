@@ -1,0 +1,104 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{multicol}
+\usepackage{hyperref}
+\title{FYP_final_27}
+\author{dev.banthia21 }
+\date{April 2025}
+
+\begin{document}
+
+
+\section{Abstract}
+
+This project presents an intelligent, hybrid data extraction pipeline for real estate documents, with a focus on property deeds. The solution combines a machine learning-based approach—leveraging a BERT-based Named Entity Recognition (NER) model to identify complex fields—with a rule-based pattern matching system for extracting regular, well-structured fields. OCR preprocessing is handled by Azure OCR, and the system outputs structured data in CSV/Excel format without uncertainty estimation. \\
+
+Evaluation on a test dataset of 400 deed documents—spanning warranty deeds, special warranty deeds, statutory warrants, and warranty deeds with vendor liens—showed over 75\% field-level accuracy across 20 target fields. A field prediction was counted as correct when it had at least 80\% overlap with the ground truth. \\
+
+The layered architecture balances the generalisation capability of transformer-based models with the precision and interpretability of deterministic rules. While currently a prototype, the system shows strong potential for deployment, with scalability considerations for processing over 10,000 documents per day. If successful, it is expected to reduce manual data entry effort by at least 30\% in a workflow currently involving over 200 personnel. \\
+
+Future work involves extending this approach to additional document types such as mortgages and validating performance on larger datasets. This work lays the foundation for scalable, high-accuracy automation in legal document processing. \\
+
+\section{Introduction}
+
+\subsection{Business motivations}
+
+In the real estate industry, structured property data plays a pivotal role in enabling accurate decision-making, efficient operations, and the development of competitive digital platforms. With the growing digitisation of property transactions, companies across the sector—including data aggregators, real estate marketplaces, investment firms, and regulatory bodies—are increasingly focused on automating the extraction of key information from legal documents such as deeds, mortgages, and foreclosure agreements. \\
+
+The demand for this data stems from several critical business needs. For real estate marketplaces, structured data underpins advanced search functionality, personalised recommendations, and transparent listings. Accurate information about property ownership, pricing, and legal status enhances user trust and improves the overall customer experience. Investors and financial institutions rely on such data for risk assessment, portfolio management, and underwriting decisions. Meanwhile, data solutions providers require scalable pipelines to aggregate property data from diverse sources and jurisdictions into unified, queryable databases. \\
+
+In addition to supporting commercial platforms and analytics, accurate property data extraction also plays a critical role in legal compliance and title indexing. Title indexing is the process of systematically cataloguing property records to establish a clear chain of ownership, identify liens or encumbrances, and ensure the legal validity of property transactions. \\
+
+County recorders, legal firms, and title insurance companies rely on accurate indexing of deed documents to facilitate property transfers and protect against disputes or fraud. Automating the extraction of relevant fields such as grantor and grantee names, legal descriptions, and parcel identifiers is therefore essential not only for operational efficiency but also for maintaining compliance with legal standards in real estate documentation. \\
+
+\subsection{Challenges in Automated Data Extraction from Real Estate Documents}
+
+Automating the extraction of structured data from real estate documents presents several critical challenges, both in terms of data quality and operational feasibility. \\
+
+A primary obstacle lies in the nature of the source files—most documents are scanned images with poor resolution, skew, and inconsistent formatting. Document layouts vary significantly across counties, time periods, and document types, making reliable text extraction difficult. However, this challenge is largely mitigated by modern deep learning-based OCR tools such as Azure OCR, which are capable of handling noisy, irregular scans at a relatively low cost. \\
+
+The second major challenge stems from the unstructured, legal nature of the content. Deeds and mortgages often contain domain-specific terminology, complex phrasing, and high variability in how key information is presented. This makes the consistent identification and extraction of fields like party names, addresses, or legal descriptions a non-trivial task. \\
+
+With the advent of generative large language models (LLMs), it may seem natural to apply them to such problems. Indeed, LLMs demonstrate strong capabilities in understanding and summarising unstructured text. However, their use in high-volume legal data pipelines introduces serious concerns. Hallucination—the generation of text not present in the source—is an inherent risk, especially for long documents where key information may be scattered across multiple pages. LLMs also struggle with retaining factual accuracy across large contexts, such as 20-page mortgage documents. \\
+
+Moreover, the cost of deploying LLMs at scale is prohibitive. Whether accessed via commercial APIs or hosted in-house, their compute requirements and token-based pricing far exceed acceptable industry thresholds. For context, the standard processing budget for a mortgage document is approximately 0.5 cents. Processing 10,000 multi-page documents daily using LLMs would significantly surpass this limit, making them unsuitable for core field extraction in production settings. \\
+
+\subsection{Project Aim and Scope}
+
+The primary aim of this project is to design an automated workflow capable of consistently achieving over 70\% accuracy in field identification across diverse types of real estate \textit{deeds}. The focus is strictly limited to deed documents; while similar in structure, \textit{mortgages} and other legal documents such as foreclosure records or invoices contain different fields and will require model retraining. However, the architecture and methodology developed here are intended to be extensible to these other document types once the pipeline demonstrates reliable performance on deeds. \\
+
+The system is designed to extract the following fields from each deed:
+
+\begin{multicols}{2}
+\begin{itemize}
+    \item Buyer name
+    \item Seller name
+    \item Buyer address
+    \item Property address
+    \item Assessor's parcel number
+    \item Seller organization
+    \item Buyer organization
+    \item Recording date
+    \item Document number
+    \item Recording book number
+    \item Recording page number
+    \item Sales price amount
+    \item Document date
+    \item Signature date
+    \item Effective date
+    \item Document header
+\end{itemize}
+\end{multicols}
+
+An annotated dataset of 7,700 deed documents is available for training and evaluation. However, this dataset includes ground truth labels for only the first seven fields. Due to the high cost and complexity of manual annotation, the remaining fields are to be captured using a \textit{rule-based pattern matching} approach. Once the rule-based extraction demonstrates high precision, its outputs can be used to generate pseudo-labeled data for training, effectively \textit{bootstrapping} the model to learn additional field types. \\
+
+This approach offers a scalable and cost-efficient path forward, especially considering the anticipated daily volume of up to 10,000 documents. With continuous incoming data and iterative model retraining, the system is designed to improve over time and \textit{resist overfitting}, enabling it to generalise effectively to new layouts and unseen variations.
+
+\subsection{Budget Constraints and Operational Impact}
+
+Beyond the technical challenges, this project is shaped by stringent budgetary considerations. The current cost of processing each deed document is approximately \$0.10, amounting to an annual expenditure of nearly \$500,000 given the projected volume of over 10,000 documents per day. Relying solely on generative large language models (LLMs) for field extraction would far exceed this budget due to their high computational and token-based costs. Consequently, LLMs are excluded from the core extraction pipeline. \\
+
+These financial constraints also influence the selection of OCR tools. It is essential to strike a balance between cost-efficiency and accuracy when choosing between commercial OCR services such as Azure OCR, Google Cloud Vision OCR, or potential open-source alternatives. \\
+
+The potential impact of this project is significant. A successful implementation will not only improve operational efficiency by automating a labor-intensive process, but also enable the team to scale operations almost indefinitely. With in-house hardware resources as the only limiting factor, this workflow could support a major transformation in document processing capacity—positioning the organisation to win high-value clients and expand into new markets. \\
+
+
+\section{Background}
+\subsection{Transformer Models and BERT for NER}
+
+A core component of this project’s extraction pipeline is the use of pre-trained transformer models for Named Entity Recognition (NER). Among these, BERT (Bidirectional Encoder Representations from Transformers) has emerged as a strong benchmark for contextual understanding tasks across multiple domains, including legal and financial text extraction. \\
+
+BERT is based on the transformer architecture, which replaces recurrence with self-attention mechanisms to capture relationships between all words in a sentence, regardless of their distance. Unlike LSTMs, which process sequences sequentially and suffer from vanishing gradients in long contexts, the self-attention mechanism allows BERT to model dependencies between distant tokens efficiently and in parallel. This makes BERT highly scalable and better suited for large corpora with complex linguistic structures. \\
+
+One of BERT’s defining features is its bidirectional nature. While traditional models like LSTMs or GPT (which is unidirectional or causal) process text in one direction, BERT considers both left and right context simultaneously. This bidirectionality is particularly beneficial in NER tasks, where the classification of a token often depends on understanding the full surrounding sentence. \\
+
+BERT is trained using two unsupervised pretraining tasks: Masked Language Modeling (MLM) and Next Sentence Prediction (NSP). In MLM, random tokens in a sentence are masked and the model learns to predict them using surrounding context. This enables BERT to develop a deep understanding of context, semantics, and syntax. For NER, BERT is typically fine-tuned by adding a token-level classification head on top of the pre-trained model. However, even without fine-tuning, BERT’s pretrained representations provide strong contextual embeddings that can be used in hybrid pipelines. \\
+
+Importantly, BERT is not a generative model—it does not generate free-form output or “hallucinate” text. Instead, it is a discriminative model focused on comprehension-based tasks. This makes it well-suited for applications where fidelity to the input text is critical, such as extracting legal fields from scanned documents. Its robustness in handling unstructured and domain-specific text, combined with its ability to generalise from limited annotated data, makes it a compelling choice for the NER component of this system.
+
+
+
+
+
+
+\end{document}
