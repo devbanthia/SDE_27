@@ -2,9 +2,11 @@
 \usepackage{graphicx} % Required for inserting images
 \usepackage{multicol}
 \usepackage{hyperref}
+\usepackage[a4paper, margin=1in]{geometry}
 \title{FYP_final_27}
 \author{dev.banthia21 }
 \date{April 2025}
+
 
 \begin{document}
 
@@ -82,19 +84,462 @@ These financial constraints also influence the selection of OCR tools. It is ess
 
 The potential impact of this project is significant. A successful implementation will not only improve operational efficiency by automating a labor-intensive process, but also enable the team to scale operations almost indefinitely. With in-house hardware resources as the only limiting factor, this workflow could support a major transformation in document processing capacity—positioning the organisation to win high-value clients and expand into new markets. \\
 
-
 \section{Background}
-\subsection{Transformer Models and BERT for NER}
 
-A core component of this project’s extraction pipeline is the use of pre-trained transformer models for Named Entity Recognition (NER). Among these, BERT (Bidirectional Encoder Representations from Transformers) has emerged as a strong benchmark for contextual understanding tasks across multiple domains, including legal and financial text extraction. \\
+\subsection{Real Estate Deeds: Structure and Content}
 
-BERT is based on the transformer architecture, which replaces recurrence with self-attention mechanisms to capture relationships between all words in a sentence, regardless of their distance. Unlike LSTMs, which process sequences sequentially and suffer from vanishing gradients in long contexts, the self-attention mechanism allows BERT to model dependencies between distant tokens efficiently and in parallel. This makes BERT highly scalable and better suited for large corpora with complex linguistic structures. \\
+A real estate deed is a legal document used to transfer ownership of real property from one party to another. It is typically recorded by the county clerk or recorder's office and serves as the official, legally recognized evidence of a property transaction. The deed establishes who the grantor (seller) and grantee (buyer) are, and describes the property being transferred. \\
 
-One of BERT’s defining features is its bidirectional nature. While traditional models like LSTMs or GPT (which is unidirectional or causal) process text in one direction, BERT considers both left and right context simultaneously. This bidirectionality is particularly beneficial in NER tasks, where the classification of a token often depends on understanding the full surrounding sentence. \\
+Deeds contain both essential and supplementary information. The essential fields generally include:
+\begin{itemize}
+\item Grantor (seller) name
+\item Grantee (buyer) name
+\item Property address
+\item Legal description of the property
+\item Assessor's Parcel Number (APN)
+\item Recording date
+\item Document number
+\item Sales price (consideration amount), when applicable
+\item Signatures and effective date
+\item Party organizations (if applicable)
+\end{itemize}
 
-BERT is trained using two unsupervised pretraining tasks: Masked Language Modeling (MLM) and Next Sentence Prediction (NSP). In MLM, random tokens in a sentence are masked and the model learns to predict them using surrounding context. This enables BERT to develop a deep understanding of context, semantics, and syntax. For NER, BERT is typically fine-tuned by adding a token-level classification head on top of the pre-trained model. However, even without fine-tuning, BERT’s pretrained representations provide strong contextual embeddings that can be used in hybrid pipelines. \\
+These fields are critical for indexing, title verification, and ensuring legal validity. Other content, such as boilerplate legal language, disclaimers, stamps, seals, and handwritten annotations, while legally necessary, is usually not relevant for structured data extraction. \\
 
-Importantly, BERT is not a generative model—it does not generate free-form output or “hallucinate” text. Instead, it is a discriminative model focused on comprehension-based tasks. This makes it well-suited for applications where fidelity to the input text is critical, such as extracting legal fields from scanned documents. Its robustness in handling unstructured and domain-specific text, combined with its ability to generalise from limited annotated data, makes it a compelling choice for the NER component of this system.
+This project involves deed documents sourced from dozens of counties across the United States. There is no standardized national format for deeds; even within a single county, formatting can vary depending on document age, software used, or recording procedures. \\
+
+Format variations include:
+\begin{itemize}
+\item Field positioning: the same field may appear at different locations
+\item Layout differences: single vs. multi-column, left-aligned vs. justified
+\item Use of field labels: present in some documents, embedded in others
+\item Variability in casing and punctuation
+\item Presence or absence of structured sections or tables
+\item Handwritten notes, stamps, and scanning artifacts
+\end{itemize}
+
+\subsection{Linguistic Variability and the Limitations of Rule-Based Extraction}
+
+In addition to layout variability, deeds also exhibit significant linguistic variation. Important fields are often embedded within long, formal legal sentences using archaic language and inconsistent phrasing. This makes extraction using rigid rule-based methods unreliable.
+
+\textbf{Example 1: Grantee (Buyer) Name}
+\begin{quote}
+\textit{"...the said party of the first part does hereby grant, bargain, sell, and convey unto John Doe, of the County of Norfolk and State of Massachusetts, the premises described as follows..."}
+\end{quote}
+
+Here, the grantee's name appears without a clear label and is surrounded by verbose phrasing. Rule-based systems would need complex, fragile patterns to reliably extract such information.
+
+\textbf{Example 2: Consideration Amount (Sales Price)}
+\begin{quote}
+\textit{"In consideration of the sum of One Hundred Forty-Five Thousand and 00/100 Dollars (\$145,000.00), the receipt whereof is hereby acknowledged..."}
+\end{quote}
+
+This example demonstrates mixed numeric and textual representations of the sales amount within a broader legal sentence.
+
+\textbf{Example 3: Document Date}
+\begin{quote}
+\textit{"...witnesseth that this indenture was made the fourteenth day of June, in the year of our Lord two thousand and twenty..."}
+\end{quote}
+
+Such expressions are non-standard and require contextual understanding to convert into structured formats.
+
+\textbf{Example 4: Parcel Number (APN)}
+\begin{quote}
+\textit{"...being the same premises identified on the municipal tax maps as Lot 17, Block 42, also known as Parcel No. 220-064-017..."}
+\end{quote}
+
+The field "Parcel No." is embedded within geographic and historical context, not presented as a labeled value.
+
+Due to this level of variability, rule-based extraction methods are limited in their ability to generalize across unseen formats. They require extensive handcrafted rules, are brittle to minor deviations in language, and do not scale well.
+
+Machine learning-based techniques offer a more robust alternative, particularly for extracting fields such as buyer and seller names and addresses, which exhibit a high degree of variation in phrasing and structure. By learning patterns from data rather than relying on fixed templates, ML-based models are better equipped to handle diverse expressions of the same information and adapt to new, unseen document formats.
+
+
+\subsection{Model Selection for Named Entity Recognition}
+
+Named Entity Recognition (NER) is a token-level classification task that aims to identify and label key entities in unstructured text. In the context of real estate deeds, this includes fields such as names, addresses, dates, and parcel identifiers. Given the wide variation in how such entities are expressed, selecting an appropriate NER model is critical. \\
+
+Traditional approaches to NER include statistical models like Conditional Random Fields (CRFs), which rely on handcrafted features and perform well when entity boundaries are predictable. However, they struggle to generalize to linguistically diverse inputs without extensive feature engineering. \\
+
+Recurrent neural network-based models, such as Bidirectional LSTMs (BiLSTMs), improved performance by learning contextual representations of tokens in sequence. While BiLSTMs capture dependencies in both directions, they are inherently sequential, which limits their scalability and ability to model long-range dependencies effectively. \\
+
+Transformer-based models have since become the state-of-the-art in NER, thanks to their ability to model global context using self-attention. These models process all tokens in parallel and weigh relationships between them dynamically, making them well-suited for complex, unstructured language like that found in legal documents. \\
+
+Among transformer-based models, BERT (Bidirectional Encoder Representations from Transformers) has consistently achieved strong performance on NER benchmarks. BERT is pre-trained on large corpora using masked language modeling and is particularly effective at understanding the contextual meaning of words in varying syntactic and semantic environments. \\
+
+
+One defining characteristic of BERT is its ability to process text bidirectionally. Unlike models that read left-to-right (e.g., GPT), bidirectional models consider both the left and right context of each token. For example, understanding whether "Jordan" refers to a person or a location often depends on the surrounding words on both sides. This bidirectionality is critical in NER, where the correct interpretation of a token frequently relies on full sentence context. \\
+
+Given the diversity and inconsistency of legal language in deed documents, a transformer-based model with bidirectional attention offers a strong foundation for robust field extraction. The specific choice of architecture is discussed in detail in the following section. \\
+
+A more detailed explanation of BERT's architecture and its adaptation to NER tasks is provided in Section~\ref{sec:bert}.
+
+\subsection{Limitations of Using BERT Alone}
+
+While transformer-based models such as BERT have demonstrated strong performance in named entity recognition (NER) tasks involving person names, organizations, and addresses, they are not inherently well-suited for extracting structured or numeric data fields. This is particularly relevant in the context of deed documents, which contain key fields like document numbers, book and page numbers, and various date formats. \\
+
+\textbf{1. Lack of pretraining on numeric patterns:} BERT is pretrained on large, general-purpose corpora such as Wikipedia and BookCorpus. These datasets are rich in natural language but sparse in structured numerical expressions. As a result, BERT does not natively learn how to handle patterns such as ``2021-048293'' or ``Book 8472, Page 392''. \\
+
+\textbf{2. Tokenisation issues:} BERT's WordPiece tokenizer tends to split numeric tokens into multiple subword units. For example, a document number like ``2021-048293'' may be tokenized into segments such as ``2021'', ``-``, ``048'', and ``293'', breaking up the semantic unity of the field and introducing noise during classification. \\
+
+\textbf{3. No inductive bias for numeric structures:} Unlike rule-based systems, BERT has no built-in understanding that patterns like ``Book No. 8472'' or ``Parcel ID 220-064-017'' belong to a specific field type. It treats these tokens like any other arbitrary text, unless it has seen enough similar examples during fine-tuning. \\
+
+\textbf{4. Attention dilution in long sentences:} In lengthy legal sentences, short numeric spans may receive disproportionately low attention weights. Without explicit positional guidance or layout cues, BERT may fail to assign sufficient importance to these spans. \\
+
+\textbf{Implication:} For reliably extracting highly structured numeric fields, BERT alone may be insufficient. A hybrid approach that combines BERT-based entity recognition for unstructured fields with rule-based post-processing for deterministic patterns (e.g., dates, document numbers) offers a more robust and interpretable solution for end-to-end deed parsing.
+
+\subsection{Regular Expressions for Field Extraction}
+
+Regular expressions (regex) are a foundational tool for pattern matching, used to identify specific sequences of characters within text. In the context of field extraction from deed documents, regex facilitates the identification of structured tokens such as document numbers, dates, and parcel identifiers based on predefined textual patterns. \\
+
+Regex enables the construction of both primitive and compound expressions. Primitive patterns match basic components—for example, \textbackslash d+ matches one or more digits, [-/] matches common separators, and \textbackslash b denotes word boundaries. These can be composed into more complex expressions to capture specific formats. For instance, a document number like "2021-048293" can be matched using \textbackslash d{4}-\textbackslash d{6}, while dates such as "06/14/2021" or "June 14, 2021" can be captured with tailored alternatives. \\
+
+Regex is particularly effective when fields adhere to consistent structural rules, even within noisy or unstructured documents. It is computationally lightweight and easy to implement, making it a practical first-pass method for extracting well-defined numeric identifiers and standardized field types. \\
+
+However, regular expressions have notable limitations. They are inherently brittle, requiring exact pattern matches, which makes them prone to failure when faced with inconsistent phrasing, formatting artifacts, or embedded legal language. Furthermore, regex lacks semantic understanding—it cannot infer meaning from context, which is critical when extracting ambiguous entities such as names or addresses that may vary in structure and location. Consequently, regex is best employed as a complementary technique within hybrid extraction systems, supporting more robust machine learning-based models that can generalize across variability.
+
+\subsection{Hybrid Approach: Combining Regex and BERT for Field Extraction}
+
+Given the diversity and complexity of real estate deed documents, a hybrid field extraction strategy is adopted that combines regular expressions for structured numeric fields with BERT-based models for context-dependent, variable text fields. This approach balances precision and flexibility, leveraging the strengths of both methodologies. \\
+
+Regular expressions are used to extract fields that follow well-defined syntactic patterns, such as dates, document numbers, book/page references, and sales amounts. These patterns are carefully designed to account for a wide range of format variations observed across counties and document types. While regex is rigid and requires manual tuning, its reliability in identifying numeric fields with consistent delimiters makes it an effective tool for high-precision extraction. \\
+
+In contrast, fields such as buyer and seller names, addresses, and legal entities are too variable in structure to be captured accurately by rule-based methods alone. For these fields, we employ a fine-tuned BERT-based model trained on annotated deed data. Unlike regex, BERT learns patterns from labelled examples and generalizes beyond seen formats. This is crucial when dealing with the linguistic variability and legal phrasing common in unstructured documents. \\
+
+A key conceptual advantage of this hybrid setup is that regex-based extraction acts as an automatic annotator. Since thousands of deeds are processed daily, the successful pattern matching of numeric fields creates a growing pool of weakly labelled training data. This continuous stream of data can be used to retrain or fine-tune the BERT model on other fields, enabling the system to adapt and improve over time without full manual annotation. \\
+
+While BERT may not excel at extracting exact numeric values, it often correctly identifies the surrounding context, helping localize the field of interest. In such cases, regex and BERT can be used in tandem—BERT handles the identification, while regex validates and extracts the precise value. This cooperative use of both tools enhances both robustness and accuracy, particularly in production environments where document variability is high and throughput requirements are large. \\
+
+\section{Design}
+
+\subsection{Word Embeddings: Motivation and Foundations}
+
+Natural language is inherently symbolic and discrete, making it incompatible with numerical models unless converted into a continuous representation. Early approaches such as one-hot encoding represent words as binary vectors with dimensionality equal to the vocabulary size $V$. However, one-hot vectors suffer from two major drawbacks: they are sparse, and they encode no semantic similarity (e.g., the vectors for \texttt{dog} and \texttt{cat} are orthogonal despite their similarity).
+
+To address this, we map each word $w_i$ to a dense, continuous embedding vector $\mathbf{e}_i \in \mathbb{R}^d$ such that semantically similar words are closer in Euclidean or cosine space. One popular method to learn such embeddings is the Continuous Bag of Words (CBOW) model, proposed as part of Word2Vec.
+
+\subsubsection{CBOW Architecture}
+
+The CBOW model is a shallow neural network that predicts a target word given its surrounding context words. Given a context window size $c$, the model takes the $2c$ words surrounding a center word $w_t$ and aims to predict $w_t$. The context words are encoded as one-hot vectors $\mathbf{x}_j \in \mathbb{R}^V$, which are projected into embeddings using a shared matrix $W \in \mathbb{R}^{V \times d}$:
+
+\[
+\mathbf{v}_j = W^\top \mathbf{x}_j
+\]
+
+The hidden layer computes the average of these context embeddings:
+
+\[
+\mathbf{v}_{\text{context}} = \frac{1}{2c} \sum_{j=1}^{2c} \mathbf{v}_j
+\]
+
+This hidden vector is then projected to a vocabulary-sized output using another weight matrix $W' \in \mathbb{R}^{d \times V}$:
+
+\[
+\mathbf{u} = W'^\top \mathbf{v}_{\text{context}}, \quad \hat{y}_k = \frac{e^{u_k}}{\sum_{j=1}^{V} e^{u_j}}
+\]
+
+The model is trained to minimize the negative log-likelihood of the true center word $w_t$:
+
+\[
+\mathcal{L}_{\text{CBOW}} = -\log \hat{y}_{w_t}
+\]
+
+\subsection{Limitations of Static Embeddings}
+
+Although models like CBOW produce semantically meaningful embeddings, they are \emph{context-independent}—each word is assigned a single vector regardless of usage. For example, the word \texttt{bank} will have the same representation in both “river bank” and “bank account”.
+
+Furthermore, the CBOW model treats the input as a bag-of-words and averages the context embeddings, completely discarding word order. This makes it incapable of capturing syntactic patterns and structural dependencies, which are often essential in legal and formal documents.
+
+\subsection{Transformers: Contextual Embeddings through Self-Attention}
+
+To address these limitations, transformer models were introduced by Vaswani et al.~(2017), providing a mechanism to learn context-sensitive embeddings without recurrence. In this architecture, every token can attend to all other tokens in the sequence using a mechanism called \emph{self-attention}, allowing it to dynamically weight the influence of different context words.
+
+\subsubsection{Input Representations}
+
+Given an input sequence of tokens $x_1, x_2, \dots, x_n$, each token is first mapped to an embedding $\mathbf{e}_i \in \mathbb{R}^d$. Since the transformer is permutation-invariant, positional information is added via a positional encoding vector $\mathbf{p}_i$, resulting in the input to the first layer:
+
+\[
+\mathbf{z}_i^{(0)} = \mathbf{e}_i + \mathbf{p}_i
+\]
+
+\subsection{Self-Attention Mechanism}
+
+The key innovation in transformers is the self-attention mechanism, which computes an output vector for each position by aggregating information from all other positions, weighted by their relevance.
+
+Each input vector $\mathbf{z}_i$ is linearly projected into three components:
+\[
+\mathbf{q}_i = \mathbf{z}_i W^Q, \quad \mathbf{k}_i = \mathbf{z}_i W^K, \quad \mathbf{v}_i = \mathbf{z}_i W^V
+\]
+
+where $W^Q, W^K, W^V \in \mathbb{R}^{d \times d_k}$ are learned weight matrices for queries, keys, and values respectively.
+
+These can be interpreted as follows:
+\begin{itemize}
+  \item \textbf{Query} ($\mathbf{q}_i$): What the token is asking about other tokens.
+  \item \textbf{Key} ($\mathbf{k}_j$): What a token offers in response.
+  \item \textbf{Value} ($\mathbf{v}_j$): The actual content contributed if deemed relevant.
+\end{itemize}
+
+The attention weight between token $i$ and token $j$ is given by the scaled dot product between their query and key vectors:
+
+\[
+\alpha_{ij} = \frac{\exp\left(\frac{\mathbf{q}_i^\top \mathbf{k}_j}{\sqrt{d_k}}\right)}{\sum_{j'=1}^{n} \exp\left(\frac{\mathbf{q}_i^\top \mathbf{k}_{j'}}{\sqrt{d_k}}\right)}
+\]
+
+The output for token $i$ is then computed as a weighted sum of value vectors:
+
+\[
+\text{Attention}(\mathbf{q}_i, K, V) = \sum_{j=1}^{n} \alpha_{ij} \mathbf{v}_j
+\]
+
+In matrix form, this becomes:
+
+\[
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+\]
+
+\subsection{Stacked Encoder Layers and Contextualization}
+
+A transformer encoder consists of multiple stacked layers, each with two main components:
+\begin{enumerate}
+  \item Multi-head self-attention: runs multiple attention operations in parallel with independent projections.
+  \item Feed-forward network: applies two linear transformations with a non-linearity in between.
+\end{enumerate}
+
+Each layer also includes residual connections and layer normalization to facilitate gradient flow:
+
+\[
+\text{LayerNorm}(X + \text{Attention}(X)) \rightarrow \text{LayerNorm}(X + \text{FFN}(X))
+\]
+
+By stacking $L$ such encoder blocks, each token embedding becomes deeply contextualized—its final representation encodes rich semantic and syntactic information from the entire sequence.
+
+These contextual embeddings can then be fed into a task-specific head, such as a linear classifier for token classification in named entity recognition.
+
+\subsection{Fine-Tuning BERT for Named Entity Recognition}
+
+To perform token-level field extraction from deed documents, we fine-tune BERT on a \emph{Named Entity Recognition} (NER) task. BERT's bidirectional transformer layers produce contextual embeddings for each input token, which are then classified into entity categories using a task-specific classification head.
+
+\subsubsection{WordPiece Tokenization}
+
+BERT uses a subword tokenization scheme known as \emph{WordPiece}. Instead of assigning embeddings to entire words, WordPiece breaks rare or unknown words into smaller units. For example:
+
+\begin{center}
+    \texttt{unaffordable} $\rightarrow$ [\texttt{un}, \texttt{\#\#afford}, \texttt{\#\#able}]
+\end{center}
+
+This allows the model to handle out-of-vocabulary words more gracefully. However, it also introduces a challenge for NER: entity labels are defined at the word level, while the input is tokenized at the subword level.
+
+To resolve this, labels are aligned only to the \emph{first subword} of each token. Subsequent subtokens are either ignored during loss computation or assigned a special label such as \texttt{X}.
+
+\subsubsection{Entity Tagging Schemes}
+
+We adopt the IOB tagging format to annotate entities:
+\begin{itemize}
+    \item \texttt{B-FIELD}: Beginning of a field (e.g., \texttt{B-BUYER\_NAME})
+    \item \texttt{I-FIELD}: Inside a field span
+    \item \texttt{O}: Outside any entity
+\end{itemize}
+
+Alternatively, more expressive schemes like BILOU (Begin, Inside, Last, Outside, Unit) can be used to better capture field boundaries, but IOB remains standard in many NER datasets and is compatible with BERT’s token-level classification setup.
+
+\subsubsection{Token Classification Layer}
+
+Let $\mathbf{h}_i \in \mathbb{R}^d$ be the contextual embedding of token $i$ output by BERT's final layer. This is passed through a linear classifier:
+
+\[
+\mathbf{y}_i = \text{softmax}(\mathbf{W} \mathbf{h}_i + \mathbf{b})
+\]
+
+where $\mathbf{W} \in \mathbb{R}^{C \times d}$ and $\mathbf{b} \in \mathbb{R}^C$, with $C$ being the number of entity classes (e.g., \texttt{B-BUYER\_NAME}, \texttt{I-BUYER\_NAME}, \texttt{O}, etc.).
+
+The predicted probability distribution over labels is compared against the ground truth labels using the **cross-entropy loss**:
+
+\[
+\mathcal{L}_{\text{NER}} = -\sum_{i=1}^{n} \sum_{c=1}^{C} y_{i,c}^{\text{true}} \log(y_{i,c}^{\text{pred}})
+\]
+
+During training, gradients are backpropagated through both the classification head and BERT encoder layers, updating all parameters via gradient descent. This fine-tuning allows the model to adapt its general linguistic knowledge to the domain-specific patterns in real estate documents.
+
+\subsubsection{Training Setup}
+
+The model is fine-tuned on a labelled dataset of 7,700 deed documents. The input is preprocessed into token-label pairs, and training is performed using the Adam optimizer with a learning rate warm-up schedule. Common hyperparameters include:
+\begin{itemize}
+    \item Batch size: 16 or 32
+    \item Learning rate: $2 \times 10^{-5}$ to $5 \times 10^{-5}$
+    \item Epochs: 3–5
+    \item Max sequence length: typically 512 tokens
+\end{itemize}
+
+\subsubsection{Inference and Output Mapping}
+
+At inference time, each token receives a predicted label. Subword labels are mapped back to words using a label aggregation strategy (e.g., taking the label of the first subtoken). Consecutive spans with \texttt{B-}/\texttt{I-} tags are grouped into field-level predictions and postprocessed into structured outputs.
+
+Field-level accuracy is measured using an overlap criterion—typically, a prediction is considered correct if it matches the ground truth with at least 80\% character-level overlap.
+
+\subsection{Labelled Dataset Format and Entity Alignment Pipeline}
+
+To fine-tune the BERT-based Named Entity Recognition (NER) model for field extraction from deed documents, a multi-stage data preparation pipeline was developed. The input consisted of raw OCR text and manually annotated character-level spans in a JSON format. This pipeline transformed noisy annotated data into a structure compatible with BERT's token classification framework.
+
+\subsubsection{Annotation Format}
+
+Each record in the labelled dataset was a JSON object containing:
+\begin{itemize}
+    \item \texttt{classes}: a list of possible field types such as \texttt{``BUYER NAME''}, \texttt{``SELLER NAME''}, \texttt{``PROPERTY ADDRESS''}, etc.
+    \item \texttt{annotations}: a list of pairs \texttt{[text, \{entities\}]}, where \texttt{text} is the full OCR-extracted document and \texttt{entities} is a list of character-level spans in the form \texttt{[start\_char, end\_char, label]}.
+\end{itemize}
+
+For example:
+\begin{verbatim}
+["...unto John Doe, of the County...", {"entities": [[7, 15, "BUYER NAME"]]}]
+\end{verbatim}
+
+\subsubsection{Entity Cleaning and Boundary Correction}
+
+Given the presence of OCR artifacts, label typos, and extraneous tokens in the raw data, the following corrections were applied:
+\begin{itemize}
+    \item Entity label typos (e.g., \texttt{``BUYER ADDDRESS''}) were standardized.
+    \item Only a selected set of core field types were retained for training.
+    \item Custom noise patterns such as \verb|<laysep@@##$$>| and Unicode escape sequences (e.g., \verb|\uXXxx|) were removed using regular expressions.
+\end{itemize}
+
+To maintain valid offsets, entity positions were recalculated post-cleaning by computing the difference in character count between the raw and cleaned text up to each entity start index. This ensured entity spans remained correctly aligned.
+
+\subsubsection{Token Boundary Enforcement}
+
+OCR noise sometimes resulted in spans that partially overlapped with token boundaries. To handle this, a clipping strategy was employed:
+\begin{itemize}
+    \item Token positions were identified using regular expressions.
+    \item If an entity overlapped with one or more token boundaries, the start or end position was adjusted to snap to the nearest non-overlapping token edge.
+    \item If the corrected span became invalid (i.e., \texttt{start $\geq$ end}), it was discarded.
+\end{itemize}
+
+\subsubsection{Conversion to SpaCy-Compatible Format}
+
+Each cleaned document was converted into a \texttt{Doc} object using SpaCy. Spans were aligned using:
+\begin{verbatim}
+doc.char_span(start, end, label=..., alignment_mode="expand")
+\end{verbatim}
+
+The \texttt{``expand''} mode ensured the span was stretched to the nearest complete tokens, mitigating errors from imprecise offsets.
+
+Example:
+\begin{verbatim}
+text = "...unto John Doe, of the County..."
+entities = [[7, 15, "BUYER NAME"]]
+\end{verbatim}
+
+If valid, this would create a SpaCy \texttt{Span} over \texttt{``John Doe''}.
+
+\subsubsection{BERT Token Alignment and BIO Tagging}
+
+The final dataset was aligned with the BERT tokenizer using HuggingFace’s \texttt{bert-base-uncased}. Each document was tokenized with:
+\begin{verbatim}
+tokenizer(text, return_offsets_mapping=True)
+\end{verbatim}
+
+This returned:
+\begin{itemize}
+    \item \texttt{input\_ids}: Integer indices corresponding to subword tokens in BERT’s vocabulary. These are not words themselves but references used to retrieve corresponding embedding vectors from BERT’s lookup table.
+    \item \texttt{offset\_mapping}: List of character start and end positions for each token.
+\end{itemize}
+
+Each token was then labeled using the BIO scheme:
+\begin{itemize}
+    \item \texttt{B-FIELD}: beginning of an entity span
+    \item \texttt{I-FIELD}: inside an entity span
+    \item \texttt{O}: outside all entities
+\end{itemize}
+
+Example:
+\begin{verbatim}
+Entity span: [0, 8, "BUYER NAME"]
+Text: "John Doe lives..."
+Tokens: ["[CLS]", "john", "doe", ...]
+Offsets: [(0,0), (0,4), (5,8), ...]
+
+→ Labels: ["O", "B-BUYER NAME", "I-BUYER NAME", ...]
+\end{verbatim}
+
+Zero-offset tokens such as \texttt{[CLS]} and \texttt{[SEP]} were ignored during labeling.
+
+\subsubsection{Final Output Format}
+
+The final aligned dataset was a list of:
+\begin{verbatim}
+[input_ids, BIO_labels]
+\end{verbatim}
+
+Each \texttt{input\_id} sequence serves as input to BERT, where each integer maps to an embedding vector in BERT’s pretrained vocabulary. The corresponding \texttt{BIO\_labels} guide supervised learning during fine-tuning.
+
+\begin{verbatim}
+input_ids: [101, 2198, 6957, ...]
+labels:    ["O", "B-BUYER NAME", "I-BUYER NAME", ...]
+\end{verbatim}
+
+This structure is used for token-level classification, enabling BERT to learn fine-grained field extraction in downstream training.
+
+\subsection{Training Feature Construction and Windowed Chunking}
+
+To train the BERT model effectively, each document must be tokenized into input sequences of fixed length, along with aligned labels and attention masks. BERT models have a maximum input window size of 512 tokens, which imposes a hard constraint on sequence length. Given that many deed documents exceed this length, a sliding window chunking strategy is employed.
+
+\paragraph{Chunking Strategy.}
+
+Each annotated document is split into overlapping segments of up to 512 tokens:
+\begin{itemize}
+    \item The first chunk contains the first 511 tokens followed by the special \texttt{[SEP]} token (ID 102).
+    \item Subsequent chunks are generated by sliding a window forward with an overlap of 50 tokens to retain context.
+    \item The window slides by \texttt{stride = input\_len - overlap - 2}, accounting for \texttt{[CLS]} and \texttt{[SEP]} tokens.
+\end{itemize}
+
+This sliding window preserves partial context between chunks, helping the model maintain coherence when predicting entities that may begin near the chunk boundary.
+
+\paragraph{Input IDs.}
+
+Each chunk is represented by a sequence of \texttt{input\_ids}, which are integer indices referencing the corresponding subword embeddings in BERT’s vocabulary. These IDs serve as keys to retrieve fixed-length embedding vectors from the pretrained embedding table during forward propagation.
+
+\paragraph{BIO Label Alignment.}
+
+Each token ID is paired with a corresponding BIO tag from the aligned label sequence. For special tokens such as \texttt{[CLS]} and \texttt{[SEP]}, the tag \texttt{O} (outside any entity) is assigned.
+
+\paragraph{Attention Mask.}
+
+An attention mask of the same length as the token sequence is constructed:
+\[
+\texttt{attention\_mask} = [1, 1, \ldots, 1, 0, 0, \ldots, 0]
+\]
+where \texttt{1} indicates a real token and \texttt{0} indicates padding. This guides the model to ignore padded tokens during self-attention computation.
+
+\paragraph{Chunk Metadata.}
+
+Each chunk also stores a binary flag \texttt{is\_last\_chunk} to indicate whether it is the final segment of a document. This can be useful during evaluation or for aggregating predictions across multiple chunks.
+
+\paragraph{Output Format.}
+
+The final output is a list of training instances of the form:
+\begin{verbatim}
+[input_ids, labels, attention_mask, is_last_chunk]
+\end{verbatim}
+
+Each instance is converted to a PyTorch-compatible format and loaded using a custom \texttt{Dataset} class. Labels are cast to integer indices, and all tensors are batched using standard PyTorch \texttt{DataLoader} utilities.
+
+\paragraph{Dataset Construction.}
+
+The complete training dataset is loaded using a subclass of \texttt{torch.utils.data.Dataset}, which exposes the following fields for each sample:
+\begin{itemize}
+    \item \texttt{input\_ids}: tensor of token indices
+    \item \texttt{attention\_mask}: tensor of 1s and 0s
+    \item \texttt{labels}: tensor of BIO-encoded label indices
+    \item \texttt{is\_last\_chunk}: binary tensor
+\end{itemize}
+
+This structure ensures that the model receives fixed-length, label-aligned, and attention-aware input representations suitable for fine-tuning on token classification tasks.
+
+
+
+
+
+
 
 
 
