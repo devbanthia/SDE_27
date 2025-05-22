@@ -1,8 +1,10 @@
 \documentclass{article}
 \usepackage{graphicx} % Required for inserting images
 \usepackage{multicol}
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
 \usepackage{hyperref}
-\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{listings}
+\usepackage[a4paper, margin=1.5in]{geometry}
 \title{FYP_final_27}
 \author{dev.banthia21 }
 \date{April 2025}
@@ -328,9 +330,7 @@ BERT uses a subword tokenization scheme known as \emph{WordPiece}. Instead of as
     \texttt{unaffordable} $\rightarrow$ [\texttt{un}, \texttt{\#\#afford}, \texttt{\#\#able}]
 \end{center}
 
-This allows the model to handle out-of-vocabulary words more gracefully. However, it also introduces a challenge for NER: entity labels are defined at the word level, while the input is tokenized at the subword level.
-
-To resolve this, labels are aligned only to the \emph{first subword} of each token. Subsequent subtokens are either ignored during loss computation or assigned a special label such as \texttt{X}.
+This allows the model to handle out-of-vocabulary words more gracefully. However, it also introduces a challenge for NER: entity labels are defined at the word level, while the input is tokenized at the subword level. To resolve this, labels are aligned only to the \emph{first subword} of each token. Subsequent subtokens are either ignored during loss computation or assigned a special label such as \texttt{X}.
 
 \subsubsection{Entity Tagging Schemes}
 
@@ -351,9 +351,7 @@ Let $\mathbf{h}_i \in \mathbb{R}^d$ be the contextual embedding of token $i$ out
 \mathbf{y}_i = \text{softmax}(\mathbf{W} \mathbf{h}_i + \mathbf{b})
 \]
 
-where $\mathbf{W} \in \mathbb{R}^{C \times d}$ and $\mathbf{b} \in \mathbb{R}^C$, with $C$ being the number of entity classes (e.g., \texttt{B-BUYER\_NAME}, \texttt{I-BUYER\_NAME}, \texttt{O}, etc.).
-
-The predicted probability distribution over labels is compared against the ground truth labels using the **cross-entropy loss**:
+where $\mathbf{W} \in \mathbb{R}^{C \times d}$ and $\mathbf{b} \in \mathbb{R}^C$, with $C$ being the number of entity classes (e.g., \texttt{B-BUYER\_NAME}, \texttt{I-BUYER\_NAME}, \texttt{O}, etc.). The predicted probability distribution over labels is compared against the ground truth labels using the **cross-entropy loss**:
 
 \[
 \mathcal{L}_{\text{NER}} = -\sum_{i=1}^{n} \sum_{c=1}^{C} y_{i,c}^{\text{true}} \log(y_{i,c}^{\text{pred}})
@@ -379,13 +377,13 @@ Field-level accuracy is measured using an overlap criterion—typically, a predi
 
 \subsection{Labelled Dataset Format and Entity Alignment Pipeline}
 
-To fine-tune the BERT-based Named Entity Recognition (NER) model for field extraction from deed documents, a multi-stage data preparation pipeline was developed. The input consisted of raw OCR text and manually annotated character-level spans in a JSON format. This pipeline transformed noisy annotated data into a structure compatible with BERT's token classification framework.
+To fine-tune the BERT-based Named Entity Recognition (NER) model for field extraction from deed documents, a robust multi-stage preprocessing pipeline was developed. The input consisted of raw OCR text and manually annotated character-level spans in a JSON format. This pipeline transformed the noisy, span-based annotations into a structure compatible with BERT’s token classification framework, ensuring that each token could be reliably assigned a label during training.
 
 \subsubsection{Annotation Format}
 
-Each record in the labelled dataset was a JSON object containing:
+Each record in the labelled dataset was stored as a JSON object containing:
 \begin{itemize}
-    \item \texttt{classes}: a list of possible field types such as \texttt{``BUYER NAME''}, \texttt{``SELLER NAME''}, \texttt{``PROPERTY ADDRESS''}, etc.
+    \item \texttt{classes}: a list of field types such as \texttt{``BUYER NAME''}, \texttt{``SELLER NAME''}, \texttt{``PROPERTY ADDRESS''}, etc.
     \item \texttt{annotations}: a list of pairs \texttt{[text, \{entities\}]}, where \texttt{text} is the full OCR-extracted document and \texttt{entities} is a list of character-level spans in the form \texttt{[start\_char, end\_char, label]}.
 \end{itemize}
 
@@ -396,62 +394,74 @@ For example:
 
 \subsubsection{Entity Cleaning and Boundary Correction}
 
-Given the presence of OCR artifacts, label typos, and extraneous tokens in the raw data, the following corrections were applied:
+Due to OCR artifacts, inconsistent annotation, and extraneous tokens, the following cleaning steps were applied:
 \begin{itemize}
-    \item Entity label typos (e.g., \texttt{``BUYER ADDDRESS''}) were standardized.
-    \item Only a selected set of core field types were retained for training.
-    \item Custom noise patterns such as \verb|<laysep@@##$$>| and Unicode escape sequences (e.g., \verb|\uXXxx|) were removed using regular expressions.
+    \item Label typos (e.g., \texttt{``BUYER ADDDRESS''}) were normalized to standard forms.
+    \item Only a curated set of core field types was retained.
+    \item Artificial tokens such as \verb|<laysep@@##$$>| and escaped Unicode sequences (e.g., \verb|\u00a9|) were removed using regular expressions.
 \end{itemize}
 
-To maintain valid offsets, entity positions were recalculated post-cleaning by computing the difference in character count between the raw and cleaned text up to each entity start index. This ensured entity spans remained correctly aligned.
+Cleaning altered the text content and could misalign character offsets. To fix this, entity positions were recalculated by computing the character count difference between the original and cleaned text up to each entity's start index. This offset correction preserved alignment between entity spans and the new cleaned text.
 
 \subsubsection{Token Boundary Enforcement}
 
-OCR noise sometimes resulted in spans that partially overlapped with token boundaries. To handle this, a clipping strategy was employed:
+Even after cleaning, entity spans might not align with token boundaries. This misalignment arises because:
 \begin{itemize}
-    \item Token positions were identified using regular expressions.
-    \item If an entity overlapped with one or more token boundaries, the start or end position was adjusted to snap to the nearest non-overlapping token edge.
-    \item If the corrected span became invalid (i.e., \texttt{start $\geq$ end}), it was discarded.
+    \item Entity start and end indices were manually annotated at the character level, independent of how BERT tokenizes text.
+    \item BERT (and most NLP models) require entity spans to match token boundaries for correct label assignment.
 \end{itemize}
+
+To address this, the following procedure was used:
+\begin{itemize}
+    \item Tokens in the text were identified using regular expressions and stored as spans.
+    \item Each entity span was checked for partial overlap with token boundaries.
+    \item If a span intersected one or more tokens without fully covering them, its start and/or end indices were adjusted to snap to the nearest token boundary.
+    \item If the resulting span was invalid (i.e., \texttt{start} $\geq$ \texttt{end}), it was discarded.
+\end{itemize}
+
+This clipping strategy reduced label noise caused by partially included tokens, which could otherwise confuse the model.
 
 \subsubsection{Conversion to SpaCy-Compatible Format}
 
-Each cleaned document was converted into a \texttt{Doc} object using SpaCy. Spans were aligned using:
-\begin{verbatim}
-doc.char_span(start, end, label=..., alignment_mode="expand")
-\end{verbatim}
+To ensure that annotated entity spans align correctly with token boundaries, each cleaned document was processed using \texttt{spaCy}, a widely used open-source natural language processing (NLP) library that provides efficient tokenization and linguistic annotations. \\
 
-The \texttt{``expand''} mode ensured the span was stretched to the nearest complete tokens, mitigating errors from imprecise offsets.
+In \texttt{spaCy}, a processed document is represented by a \texttt{Doc} object. This object contains the original text along with tokenization metadata such as token indices and their corresponding character-level start and end positions. By converting each raw text string into a \texttt{Doc} object using \texttt{nlp.make\_doc(text)}, the pipeline gains access to this token structure, which is critical for aligning annotated character spans with tokens. \\
 
-Example:
-\begin{verbatim}
-text = "...unto John Doe, of the County..."
-entities = [[7, 15, "BUYER NAME"]]
-\end{verbatim}
+Each manually annotated entity span \texttt{[start, end, label]} was then passed to the method \texttt{doc.char\_span(...)}. This method attempts to convert a character-level span into a \texttt{Span} object, which represents a continuous sequence of tokens in the document. Importantly, \texttt{char\_span} includes an optional argument \texttt{alignment\_mode}, which determines how to handle spans that do not perfectly align with token boundaries. \\
 
-If valid, this would create a SpaCy \texttt{Span} over \texttt{``John Doe''}.
+In this pipeline, the mode \texttt{alignment\_mode="expand"} was used to address a common issue: annotated spans derived from OCR or human labelling often do not begin and end exactly at token boundaries. For example, a span might begin in the middle of a token (e.g., character 1 of the token ``John'') and end in the middle of another. If such a span were used directly during training, it would create ambiguity during token classification, as the model would not be able to cleanly assign a label to any individual token. \\
+
+The \texttt{"expand"} mode resolves this by stretching the character span outward to the nearest full tokens. This ensures that entity spans are aligned cleanly with spaCy’s tokenization and are therefore compatible with token-level classification in transformer-based models. If a span could not be resolved to valid tokens even after expansion—such as if it landed entirely within whitespace or formatting artifacts—it was discarded to avoid injecting noise into the training set. \\
+
+By leveraging spaCy’s alignment functionality in this way, the pipeline robustly transformed noisy, potentially misaligned entity annotations into token-aligned spans. This step was essential to bridge the gap between raw OCR-derived annotations and the requirements of models like BERT, which expect input labels to be defined at the token level.
+
 
 \subsubsection{BERT Token Alignment and BIO Tagging}
 
-The final dataset was aligned with the BERT tokenizer using HuggingFace’s \texttt{bert-base-uncased}. Each document was tokenized with:
+After entity spans were aligned with token boundaries, the dataset was tokenized using HuggingFace’s \texttt{bert-base-uncased} tokenizer. Each document was passed through the tokenizer with the \texttt{return\_offsets\_mapping=True} argument, which returned both token identifiers and their corresponding character-level positions: \\
+
 \begin{verbatim}
 tokenizer(text, return_offsets_mapping=True)
 \end{verbatim}
 
-This returned:
+This produced:
 \begin{itemize}
-    \item \texttt{input\_ids}: Integer indices corresponding to subword tokens in BERT’s vocabulary. These are not words themselves but references used to retrieve corresponding embedding vectors from BERT’s lookup table.
-    \item \texttt{offset\_mapping}: List of character start and end positions for each token.
+    \item \texttt{input\_ids}: a sequence of integer identifiers corresponding to subword tokens in BERT’s vocabulary.
+    \item \texttt{offset\_mapping}: a list of \texttt{(start, end)} character positions indicating which part of the raw text each token corresponds to.
 \end{itemize}
 
-Each token was then labeled using the BIO scheme:
+Each token was then assigned a label using the BIO (Begin–Inside–Outside) tagging scheme:
 \begin{itemize}
-    \item \texttt{B-FIELD}: beginning of an entity span
-    \item \texttt{I-FIELD}: inside an entity span
-    \item \texttt{O}: outside all entities
+    \item \texttt{B-FIELD}: indicates the beginning of an entity of type \texttt{FIELD}.
+    \item \texttt{I-FIELD}: indicates that the token is inside (but not at the start of) an entity of type \texttt{FIELD}.
+    \item \texttt{O}: indicates that the token does not belong to any entity.
 \end{itemize}
 
-Example:
+The use of BIO tagging, rather than a simpler Inside–Outside (IO) scheme, is necessary to disambiguate adjacent entities of the same type. Without a \texttt{B-} tag, sequences like \texttt{I-BUYER NAME, I-BUYER NAME} could either mean a single multi-token entity or two consecutive entities of the same type, making decoding ambiguous. The BIO scheme resolves this by explicitly marking the boundary where a new entity begins. \\
+
+While more expressive schemes such as BILOU (Begin, Inside, Last, Outside, Unit) offer finer granularity—especially for distinguishing between single-token and multi-token entities—BIO was chosen for its simplicity and widespread adoption in transformer-based NER models. It offers a good balance between expressive power and training stability, particularly given the relatively noisy and layout-influenced nature of OCR-derived text.
+
+An illustrative example is shown below:
 \begin{verbatim}
 Entity span: [0, 8, "BUYER NAME"]
 Text: "John Doe lives..."
@@ -461,88 +471,388 @@ Offsets: [(0,0), (0,4), (5,8), ...]
 → Labels: ["O", "B-BUYER NAME", "I-BUYER NAME", ...]
 \end{verbatim}
 
-Zero-offset tokens such as \texttt{[CLS]} and \texttt{[SEP]} were ignored during labeling.
+Special tokens such as \texttt{[CLS]} and \texttt{[SEP]}, which have no corresponding character offsets (\texttt{(0,0)}), were excluded from the label assignment process.
 
-\subsubsection{Final Output Format}
 
-The final aligned dataset was a list of:
+\subsubsection{Final Output Format and Chunked Encoding Strategy}
+
+Since many deed documents are longer than the 512-token limit imposed by BERT-based models, each tokenized document was split into overlapping fixed-length chunks. Specifically, a sliding window approach was used to create chunks of 512 tokens with a 50-token overlap between consecutive segments. \\
+
+This chunking strategy addresses a core limitation of transformer models: they cannot attend to arbitrarily long sequences. However, naively truncating the document risks discarding important contextual information, particularly if an entity or its relevant keywords are split across chunk boundaries. The overlapping window mitigates this risk. By allowing 50 tokens of shared context between adjacent chunks, the model retains access to partial upstream context in subsequent windows, increasing the likelihood that fragmented entities can still be captured. \\
+
+Each chunk was represented as a tuple of:
 \begin{verbatim}
-[input_ids, BIO_labels]
+(input_ids, attention_mask, BIO_labels)
 \end{verbatim}
 
-Each \texttt{input\_id} sequence serves as input to BERT, where each integer maps to an embedding vector in BERT’s pretrained vocabulary. The corresponding \texttt{BIO\_labels} guide supervised learning during fine-tuning.
-
-\begin{verbatim}
-input_ids: [101, 2198, 6957, ...]
-labels:    ["O", "B-BUYER NAME", "I-BUYER NAME", ...]
-\end{verbatim}
-
-This structure is used for token-level classification, enabling BERT to learn fine-grained field extraction in downstream training.
-
-\subsection{Training Feature Construction and Windowed Chunking}
-
-To train the BERT model effectively, each document must be tokenized into input sequences of fixed length, along with aligned labels and attention masks. BERT models have a maximum input window size of 512 tokens, which imposes a hard constraint on sequence length. Given that many deed documents exceed this length, a sliding window chunking strategy is employed.
-
-\paragraph{Chunking Strategy.}
-
-Each annotated document is split into overlapping segments of up to 512 tokens:
 \begin{itemize}
-    \item The first chunk contains the first 511 tokens followed by the special \texttt{[SEP]} token (ID 102).
-    \item Subsequent chunks are generated by sliding a window forward with an overlap of 50 tokens to retain context.
-    \item The window slides by \texttt{stride = input\_len - overlap - 2}, accounting for \texttt{[CLS]} and \texttt{[SEP]} tokens.
+    \item \texttt{input\_ids}: A list of integers mapping each token in the chunk to an index in BERT’s vocabulary. These serve as the primary input to the model.
+    
+    \item \texttt{attention\_mask}: A binary vector of the same length as \texttt{input\_ids}, where each element indicates whether the corresponding token is real (1) or padding (0). This is essential for BERT's self-attention mechanism to ignore padded tokens when computing attention scores. Without the attention mask, BERT would treat padding as meaningful input, corrupting its contextual representations and degrading performance, especially during fine-tuning on short chunks or when batching variable-length samples.
+
+    \item \texttt{BIO\_labels}: A list of string tags in the BIO format, aligned to each token in \texttt{input\_ids}, indicating the token’s entity role. These labels are used as supervision signals during training and are ignored (or masked) for special tokens such as \texttt{[CLS]}, \texttt{[SEP]}, or padding tokens.
 \end{itemize}
 
-This sliding window preserves partial context between chunks, helping the model maintain coherence when predicting entities that may begin near the chunk boundary.
-
-\paragraph{Input IDs.}
-
-Each chunk is represented by a sequence of \texttt{input\_ids}, which are integer indices referencing the corresponding subword embeddings in BERT’s vocabulary. These IDs serve as keys to retrieve fixed-length embedding vectors from the pretrained embedding table during forward propagation.
-
-\paragraph{BIO Label Alignment.}
-
-Each token ID is paired with a corresponding BIO tag from the aligned label sequence. For special tokens such as \texttt{[CLS]} and \texttt{[SEP]}, the tag \texttt{O} (outside any entity) is assigned.
-
-\paragraph{Attention Mask.}
-
-An attention mask of the same length as the token sequence is constructed:
-\[
-\texttt{attention\_mask} = [1, 1, \ldots, 1, 0, 0, \ldots, 0]
-\]
-where \texttt{1} indicates a real token and \texttt{0} indicates padding. This guides the model to ignore padded tokens during self-attention computation.
-
-\paragraph{Chunk Metadata.}
-
-Each chunk also stores a binary flag \texttt{is\_last\_chunk} to indicate whether it is the final segment of a document. This can be useful during evaluation or for aggregating predictions across multiple chunks.
-
-\paragraph{Output Format.}
-
-The final output is a list of training instances of the form:
-\begin{verbatim}
-[input_ids, labels, attention_mask, is_last_chunk]
-\end{verbatim}
-
-Each instance is converted to a PyTorch-compatible format and loaded using a custom \texttt{Dataset} class. Labels are cast to integer indices, and all tensors are batched using standard PyTorch \texttt{DataLoader} utilities.
-
-\paragraph{Dataset Construction.}
-
-The complete training dataset is loaded using a subclass of \texttt{torch.utils.data.Dataset}, which exposes the following fields for each sample:
+All data preprocessing and model training were implemented in \texttt{PyTorch}, using the HuggingFace \texttt{Transformers} and \texttt{Datasets} libraries. PyTorch was selected over TensorFlow for several reasons:
 \begin{itemize}
-    \item \texttt{input\_ids}: tensor of token indices
-    \item \texttt{attention\_mask}: tensor of 1s and 0s
-    \item \texttt{labels}: tensor of BIO-encoded label indices
-    \item \texttt{is\_last\_chunk}: binary tensor
+    \item It offers a more transparent and Pythonic programming model, which aligns well with the need for custom span adjustment, dynamic chunking, and debugging.
+    \item PyTorch is the default backend for HuggingFace models and integrates seamlessly with its tokenizers, model classes, and training utilities.
+    \item It provides better control over GPU memory usage and batch operations, which was particularly important given the variable-length nature of the tokenized OCR documents.
 \end{itemize}
 
-This structure ensures that the model receives fixed-length, label-aligned, and attention-aware input representations suitable for fine-tuning on token classification tasks.
+This final format — \texttt{(input\_ids, attention\_mask, BIO\_labels)} — formed the input to the token classification head of the BERT model. Each training sample enabled the model to learn fine-grained mappings from contextualized token embeddings to entity labels, thereby supporting accurate field-level extraction from unstructured, OCR-derived document text.
+
+\subsection{Address Structure Preservation and Post-Processing}
+
+While transformer-based models like BERT are highly effective at understanding linguistic context and identifying candidate address spans, they do not possess any inherent knowledge of the required structure or format of an address. Consequently, predictions often include partially formed addresses—omitting critical components such as ZIP codes, truncating street numbers (e.g., predicting ``\#\#32'' instead of ``1232''), or capturing incomplete state names. This compromises both the accuracy and downstream usability of the extracted fields. \\
+
+To address this, a rule-based post-processing step was introduced to enforce structural consistency in the extracted address fields. This step was applied to both \texttt{BUYER ADDRESS} and \texttt{SELLER ADDRESS} fields after initial model inference. \\
+
+\paragraph{Chunk Expansion and Pattern Matching.}
+First, each extracted address span was matched against the full OCR-predicted text of the document. To ensure partial predictions were not missed, a search was performed using a regular expression that escaped the predicted substring and searched a 100-character window surrounding the match. Within this window, a more robust pattern-based search was then conducted to identify a fully formed address.
+
+The address validation pattern was constructed as a combination of:
+\begin{itemize}
+    \item A street number: a 1–6 digit integer followed by whitespace.
+    \item A flexible middle segment: up to 75 arbitrary characters to account for street name and directional markers.
+    \item A valid US state: using full names and abbreviations, with optional punctuation (e.g., ``TX'', ``T.X.'', ``Texas'').
+    \item An optional ZIP code: a five-digit code, optionally followed by a hyphenated four-digit suffix.
+\end{itemize}
+
+If this pattern matched a full address in the local context of the original prediction, the span was replaced with the complete address. Otherwise, the partially predicted string was retained as-is.
+
+\paragraph{Regex-Based Noise Cleanup.}
+Prior to matching, both the predicted address and OCR text were normalized by removing artificial symbols such as ``\#\#'' and collapsing whitespace around punctuation characters (e.g., turning ``1234 , Main St .'' into ``1234,Main St.''). This reduced the chances of tokenization artifacts interfering with pattern recognition.
+
+\bigskip
+\begin{algorithm}[H]
+\caption{Normalize Extracted Address Using Context-Aware Regex}
+\label{alg:address_normalization}
+\DontPrintSemicolon
+
+\KwIn{DataFrame \texttt{predictions\_df}, column name \texttt{col} (e.g., BUYER ADDRESS)}
+\KwOut{Updated \texttt{predictions\_df[col]} with improved address predictions}
+
+\vspace{2mm}
+Define a regex \texttt{address\_pattern} composed of:\;
+\Indp
+Street number (1--6 digits) \\
++ Up to 75 arbitrary characters \\
++ Valid US state (abbreviation or full name) \\
++ Optional ZIP code
+\Indm
+
+\vspace{2mm}
+\ForEach{row $i$ in \texttt{predictions\_df}}{
+    
+    Load the corresponding OCR text from file\;
+
+    \vspace{1mm}
+    Clean the OCR text by:\;
+    \Indp Remove symbols like ``\#\#'' and normalize spaces around punctuation\;
+    \Indm
+
+    \vspace{1mm}
+    \If{the predicted address in column \texttt{col} is not empty}{
+    
+        Clean the predicted address using the same rules\;
+        Escape the address to build a search pattern\;
+
+        \vspace{1mm}
+        \If{pattern is found in the OCR text}{
+            Extract a 100-character window around the match\;
+
+            Search the window using \texttt{address\_pattern}\;
+
+            \If{a valid full address is found}{
+                Replace the predicted address with the full match\;
+            }
+        }
+    }
+}
+
+\vspace{2mm}
+\Return updated \texttt{predictions\_df}
+\end{algorithm}
+\bigskip
 
 
+\paragraph{Why Learning Alone Is Not Sufficient.}
+Although BERT can infer what constitutes an address based on training examples, it cannot enforce formatting constraints at inference time. There is no architectural mechanism to guarantee that a ZIP code, state abbreviation, or house number is present. The inclusion of rule-based post-processing thus complements the model by injecting structural priors into the pipeline — a form of hybrid learning and validation that improves precision without sacrificing recall.
+
+\subsection{Post-Hoc Recovery of Missing Buyer Addresses}
+
+While the BERT-based NER model was effective at identifying most address spans, a notable source of error involved missing \texttt{BUYER ADDRESS} fields. This occurred in cases where the address was not mentioned in close proximity to the buyer's name, but instead appeared in a separate section of the document — often introduced by template phrases such as ``Mail tax statements to:'' or ``Send notices to grantee at:''. \\
+
+Because transformer models process tokens sequentially within a limited attention span (typically 512 tokens), they are prone to missing entities that are semantically related but **not spatially adjacent**. In such cases, the model correctly identifies the buyer name but fails to associate a later address as being relevant, especially when the address lacks an explicit label like ``BUYER ADDRESS''. \\
+
+To recover such cases, a targeted rule-based procedure was implemented. The pipeline first identified all rows where the \texttt{BUYER ADDRESS} field was missing (i.e., \texttt{NaN} after model prediction). For each such row, the corresponding OCR-predicted text file was loaded for re-examination. \\
+
+\paragraph{Name-Anchored Regex Search.}
+The recovery strategy involved searching for address-like patterns that appear in the same vicinity as a buyer's name or organization name. The pipeline first constructed one or more regular expressions based on the predicted \texttt{BUYER NAME} or \texttt{BUYER ORG}. These patterns allowed for variability in spacing and punctuation, and supported structures such as:
+\begin{itemize}
+    \item ``John A. Smith''
+    \item ``Smith, John A.''
+    \item ``Smith and Johnson LLC''
+\end{itemize}
+
+Each name-derived anchor was then used to build a broader search expression that looked for:
+\begin{itemize}
+    \item A match to the name, followed by
+    \item Up to 100 arbitrary characters, followed by
+    \item A valid US state name or abbreviation, followed by
+    \item A ZIP code (optionally in hyphenated 9-digit form)
+\end{itemize}
+
+\paragraph{Example Pattern.}
+\begin{verbatim}
+Pattern: John A. Smith.{0,100}(Texas|TX)\s+\d{5}(-\d{1,4})?
+\end{verbatim}
+
+This approach was robust to intervening text (e.g., introductory phrases or formatting tokens), and allowed the pipeline to capture address-like content that may have been completely missed by the model. \\
+
+\paragraph{Normalization and Assignment.}
+All matches were cleaned using whitespace and punctuation normalization to improve consistency with the rest of the dataset. The matched address was then written back to the \texttt{BUYER ADDRESS} column for the corresponding row in the prediction dataframe. 
+
+\vspace{8mm} % or \bigskip
 
 
+\begin{algorithm}[H]
+\caption{Post-Hoc Buyer Address Recovery via Regex Anchored on Buyer Name or Organization}
+\DontPrintSemicolon
+
+\KwIn{Predictions dataframe with missing `BUYER ADDRESS` entries}
+\KwOut{Updated `BUYER ADDRESS` field for recovered entries}
+
+Initialize $recovered \gets 0$ \;
+$missing\_indices \gets$ indices where BUYER ADDRESS is NaN \;
+
+\ForEach{$i \in missing\_indices$}{
+
+    Load OCR text from corresponding file path using \texttt{IMAGENAME} \;
+
+    \eIf{BUYER NAME is not NaN}{
+        Clean punctuation in buyer name\;
+        $name\_patterns \gets$ BuildNameRegexes(buyer name)\;
+    }{
+        \eIf{BUYER ORG is not NaN}{
+            Clean punctuation in buyer org\;
+            $name\_patterns \gets$ \{buyer org\}\;
+        }{
+            \textbf{continue}\;
+        }
+    }
+
+    $buyer\_addresses \gets [~]$ \tcp*{Empty list}
+
+    \ForEach{$pattern \in name\_patterns$}{
+        Construct regex pattern:
+        \begin{itemize}
+            \item pattern + up to 100 characters
+            \item valid US state (full name or abbrev.)
+            \item 5-digit or 9-digit ZIP code
+        \end{itemize}
+        
+        \If{regex match found in OCR text}{
+            Append matched address to $buyer\_addresses$\;
+        }
+    }
+
+    \If{$buyer\_addresses$ is not empty}{
+        Join all matched addresses into one string\;
+        Assign to `BUYER ADDRESS` in predictions dataframe\;
+        $recovered \gets recovered + 1$\;
+    }
+}
+
+\Return updated predictions dataframe \;
+\end{algorithm}
+
+\vspace{8mm} 
 
 
+\paragraph{Impact.}
+This post-hoc recovery mechanism allowed the pipeline to reclaim a non-trivial number of missing buyer addresses, substantially improving recall for the most critical entity type in downstream use cases. It also demonstrates the utility of combining learning-based extraction with deterministic rules — especially when dealing with semi-structured legal documents where formatting conventions are predictable, but not always contiguous.
 
+\subsection{Recording Metadata Extraction via Date-Time Anchoring}
 
+Several important fields in deed documents—specifically the \textit{recording date}, \textit{document number}, \textit{book number}, and \textit{page number}—were not included in the initial annotated training data. Furthermore, as discussed in Section~\ref{sec:bert_limitations}, transformer-based models like BERT perform poorly when extracting structured numeric identifiers. This is due to both tokenization issues (e.g., fragmenting long numbers into subwords) and a lack of inductive bias for recognizing structured patterns like ``Book 8472'' or ``2024-003198''. 
 
+As a result, a purely model-based approach was insufficient for reliably capturing these fields. Instead, we employ a \textbf{deterministic, pattern-based strategy} where the \textit{recording date} is used as a robust anchor point for extracting all associated recording metadata.
+
+\subsubsection{Motivation for Anchoring on Recording Date}
+
+While other dates such as the document date or signature date may appear multiple times and in ambiguous contexts, the recording date is uniquely identifiable: it is the \textbf{only date in the document followed by a time stamp}. This consistent structural pattern makes it a highly reliable anchor for locating nearby metadata.
+
+Typical recording date formats include:
+
+\begin{itemize}
+    \item \texttt{April 3, 2023 at 11:24 AM}
+    \item \texttt{04/03/2023 11:24:15}
+    \item \texttt{the 3rd day of April, 2023 - 14:02}
+\end{itemize}
+
+This makes the recording date one of the few fields that can be accurately identified through syntactic structure alone, without relying on surrounding labels or semantics.
+
+\subsubsection{Regex Construction for Robust Date-Time Matching}
+
+To detect recording dates with high recall and precision, a composite regular expression was constructed to match a wide range of formats. The final pattern is composed of:
+
+\begin{itemize}
+    \item \textbf{Date component}: ISO, US, and formal legal phrasings.
+    \item \textbf{Time component}: 24-hour and 12-hour formats, with or without seconds and AM/PM.
+    \item \textbf{Flexible separator}: keywords like ``at'', hyphens, commas, or up to 20 arbitrary characters.
+\end{itemize}
+
+In Python-like notation, the pattern is structured as:
+
+\texttt{date\_time\_pattern = (date\_pattern)(separator)(time\_pattern)}
+
+This pattern is matched using \texttt{re.finditer} across the full OCR text. The first plausible match—typically near the top of the document—is selected as the recording date.
+
+\subsubsection{Using Recording Date as an Anchor}
+
+A crucial benefit of using the recording date-time as an anchor is that it enables \textbf{focused, high-precision extraction} of nearby recording metadata. Fields such as the document number, book number, and page number frequently appear in deed documents—but not always in relevant contexts. For example, similar numeric patterns often occur in stamp annotations, boilerplate text, or historical references to other documents. Without an anchor, searching the full document for patterns like \texttt{Book 8472} or \texttt{Doc\# 2023-001512} yields a large number of spurious matches, leading to high false positive rates. \\
+
+By contrast, the recording date-time block occurs only once and follows a distinctive format that is highly consistent across jurisdictions: a date immediately followed by a time. Once this match is found, it serves as a reliable reference point for locating nearby fields that are semantically related. \\ 
+
+Instead of scanning the entire document, the system performs a \textit{localized search} around the anchor—narrowing the context window to a small region. This drastically reduces the search space, minimizes false detections, and increases the likelihood that extracted values truly correspond to the deed's official recording metadata. \\
+
+This anchoring strategy is not only more accurate but also more computationally efficient, making it especially well-suited to high-volume automated pipelines.
+
+\subsection{Document Number Extraction Using Anchored Pattern Matching}
+
+The document number is a critical field in deed documents, used for indexing, retrieval, and referencing official records in county-level systems. However, this field exhibits considerable variation in format and position across jurisdictions, and was not part of the initial annotated training data. Given BERT’s limitations in handling structured numeric patterns—especially in the absence of explicit labels—a dedicated, regex-based extraction pipeline was developed.
+
+\subsubsection{Regex Strategy and Contextual Scoping}
+
+The extraction process begins by using the previously identified \textbf{recording date-time} as a positional anchor (see Section~\ref{sec:recording_anchor}). Since document number matches appear frequently in the text—both in relevant and irrelevant contexts—anchoring is essential to localize the search region and minimize false positives.
+
+To enforce structure, the full OCR text is segmented into \textit{blocks} using layout separators (e.g., custom tokens like \texttt{<laysep@@\#\#\$\$>}) as boundaries. The block that contains the recording date-time is identified, and the system then searches the immediately preceding and following blocks for potential document number candidates.
+
+\subsubsection{Document Number Format}
+
+Valid document numbers typically follow one of three formats:
+
+\begin{itemize}
+    \item A single long number: e.g., \texttt{2024000321}
+    \item A compound identifier: e.g., \texttt{2024-00054321}
+    \item An underscore-based variant: e.g., \texttt{2024\_00054321}
+\end{itemize}
+
+These are captured using the following generalized pattern:
+
+\begin{center}
+\texttt{(optional prefix) [4–15 digits] [optional dash/underscore] [4–15 digits]}
+\end{center}
+
+Whitespace and optional delimiters are accounted for to make the pattern resilient to OCR artifacts.
+
+\subsubsection{Filtering Invalid Matches}
+
+Not all numeric matches near the anchor are valid. Many deeds contain boilerplate segments or embedded key-value pairs with unrelated identifiers. For instance:
+
+\begin{itemize}
+    \item \texttt{Order No. 23-27216}
+    \item \texttt{Tax Account No. 0117513}
+\end{itemize}
+
+To eliminate such false positives, the system uses a second-stage heuristic filter. It scans for document-number-like patterns that appear within \textit{double-key structures} (e.g., two adjacent keywords such as \texttt{Map No.} or \texttt{Order Number}) but do not contain trusted prefixes like ``document number'' or ``instrument ID''. If such a match lacks an explicit label, it is flagged as invalid and excluded.
+
+\subsubsection{Explicit Label Matching}
+
+In addition to context-based detection, a separate pass is performed to locate explicitly labeled document numbers. These use trusted lexical patterns, such as:
+
+\begin{itemize}
+    \item \texttt{Document Number: 2024-001231}
+    \item \texttt{Instrument ID - 2024\_001231}
+    \item \texttt{Recording No. 2024001231}
+\end{itemize}
+
+A flexible regex is used to detect these structures, combining known prefixes (e.g., \texttt{doc}, \texttt{instrument}, \texttt{AFN}, \texttt{recording}) with suffixes (e.g., \texttt{number}, \texttt{id}, \texttt{no.}, \texttt{\#}) and separators (colon, dash, space). The matching value is then cleaned and parsed as a candidate.
+
+\subsubsection{Final Selection and Normalization}
+
+After extracting both anchor-adjacent and explicitly labeled matches, the candidates are normalized to eliminate superficial formatting differences. For instance, \texttt{2024-000321} and \texttt{2024-321} are considered equivalent after stripping leading zeros in the suffix component.
+
+The final value is selected as follows:
+
+\begin{itemize}
+    \item If one candidate occurs multiple times (i.e., mode frequency > 1), it is selected.
+    \item If not, the candidate that structurally aligns with both the anchor-adjacent set and the explicitly labeled set is chosen.
+    \item If no such match exists, a fallback strategy returns all unique candidates, prioritizing those with the most complete structure.
+\end{itemize}
+
+\subsubsection{Example Output}
+
+Given a recording date-time anchor and the surrounding blocks, the following document number block:
+
+\begin{quote}
+\texttt{<laysep@@\#\#\$\$>\\2024-000621\\<laysep@@\#\#\$\$>}
+\end{quote}
+
+would be correctly extracted and returned as:
+
+\begin{quote}
+\texttt{2024-000621}
+\end{quote}
+
+\subsubsection{Summary}
+
+This pipeline combines structural pattern matching, layout-aware scoping, and label-based heuristics to reliably extract document numbers in the absence of explicit annotations or model support. By anchoring the extraction around the recording timestamp and applying aggressive filtering, the system achieves high precision while remaining generalizable across diverse jurisdictions and deed formats.
+
+\subsection{Book and Page Number Extraction via Contextual Filtering}
+
+Deed documents often include a \textit{book number} and \textit{page number} pair as part of their official recording information. These identifiers serve as physical or digital references to where the document is stored in the county recorder’s system. However, the placement, formatting, and structure of these fields vary significantly across jurisdictions and time periods, making their extraction non-trivial.
+
+\subsubsection{Variability in Format and Language}
+
+Book and page fields appear in many surface forms, such as:
+
+\begin{itemize}
+    \item \texttt{Book 8472, Page 231}
+    \item \texttt{Bk No. 123 Vol. 9}
+    \item \texttt{Vol: 49 and Pg: 200}
+\end{itemize}
+
+To accommodate this variation, we define the following elements:
+
+\begin{itemize}
+    \item \textbf{Field labels:} Keywords such as \texttt{book}, \texttt{bk.}, \texttt{volume}, \texttt{vol.} for the book; and \texttt{page}, \texttt{pg.}, \texttt{p.} for the page.
+    \item \textbf{Suffixes:} Optional terms like \texttt{number}, \texttt{num.}, or \texttt{no.}
+    \item \textbf{Separators:} Variants including colons, dashes, hyphenated phrases, commas, conjunctions like ``and'', or freeform spacing.
+    \item \textbf{Numeric pattern:} One or two numbers, often written as a single value (e.g., \texttt{8472}) or as a range (e.g., \texttt{231--234}).
+\end{itemize}
+
+The resulting composite regular expression is designed to match pairs such as:
+
+\begin{quote}
+\texttt{Book No. 8472 -- Page 231}, \quad \texttt{Bk: 1134 and Pg: 92}, \quad \texttt{Volume 22 Pages 103-104}
+\end{quote}
+
+\subsubsection{Contextual Filtering via Recording Date Anchor}
+
+Given that similar book/page references may appear elsewhere in the document (e.g., citations to other deeds), simply applying a global regex often yields false positives. To reduce this noise, we adopt the same anchoring strategy used for document number extraction: once the recording date-time is detected, a \textit{context window} is defined spanning the blocks immediately before and after the block containing the match. \\
+
+These blocks are defined using a document segmentation token (\texttt{<laysep@@\#\#\$\$>}), which allows the text to be split into logical units. The book/page extraction then operates only within this three-block region. \\
+
+Only matches whose spans fall entirely within this context window are retained. This filtering mechanism effectively narrows the search to the header region or recorder section, where the true book/page fields are most likely to appear.
+
+\subsubsection{Disambiguation and Range Handling}
+
+When multiple valid book-page pairs are detected in the filtered region, a post-processing function is applied to select the most reliable pair:
+
+\begin{itemize}
+    \item If all book numbers are identical and only one unique page number is found, that pair is returned.
+    \item If the page numbers differ but contain no ranges (e.g., \texttt{231}, \texttt{233}), the page field is returned as a range spanning the min and max values (e.g., \texttt{231--233}).
+    \item If one of the entries already encodes a page range (e.g., \texttt{231--234}), it is directly returned.
+\end{itemize}
+
+This approach prioritizes precision while still accommodating common edge cases such as scanned multi-page deeds, disjoint metadata fields, or over-annotated headers.
+
+\subsubsection{Summary}
+
+By combining flexible regular expressions with spatial anchoring and context-aware disambiguation, the system reliably extracts book and page identifiers across a wide variety of layouts. This design significantly reduces false positives without sacrificing recall, and ensures compatibility with downstream indexing and validation processes.
 
 
 
