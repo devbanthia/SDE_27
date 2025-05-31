@@ -1,6 +1,19 @@
 \documentclass{article}
 \usepackage{graphicx} % Required for inserting images
 \usepackage{multicol}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=flexible,
+  tabsize=2
+}
+
 \usepackage[linesnumbered,ruled,vlined]{algorithm2e}
 \usepackage{hyperref}
 \usepackage{listings}
@@ -435,6 +448,49 @@ The \texttt{"expand"} mode resolves this by stretching the character span outwar
 
 By leveraging spaCy’s alignment functionality in this way, the pipeline robustly transformed noisy, potentially misaligned entity annotations into token-aligned spans. This step was essential to bridge the gap between raw OCR-derived annotations and the requirements of models like BERT, which expect input labels to be defined at the token level.
 
+\begin{document}
+
+\begin{lstlisting}[language=Python, caption=Entity Alignment and Cleaning Pipeline (Pseudocode)]
+# Input: Annotated dataset D = [(text, entities)], Regex patterns P = [p1, p2, ...]
+# Output: Cleaned and aligned dataset D'
+
+for (text, entities) in D:
+
+    # Step 1: Adjust entity boundaries based on pattern overlaps
+    matches = find_all_regex_matches(text, P)
+
+    updated_entities = []
+    for (start, end, label) in entities:
+        overlapping = find_overlaps((start, end), matches)
+
+        for match in overlapping:
+            if match partially overlaps (start, end):
+                adjust entity boundaries to exclude match
+
+        if start < end:
+            updated_entities.append((start, end, label))
+
+    # Step 2: Remove patterns globally and adjust entity offsets
+    cleaned_text = remove_patterns(text, P)
+
+    for (start, end, label) in updated_entities:
+        offset = compute_offset_due_to_removed_patterns(text, cleaned_text, start)
+        adjust entity start/end by subtracting offset
+
+    # Step 3: Align entities with spaCy Doc
+    doc = nlp.make_doc(cleaned_text)
+
+    final_entities = []
+    for (start, end, label) in updated_entities:
+        span = doc.char_span(start, end, label=label)
+        if span is valid:
+            final_entities.append((span.start_char, span.end_char, label))
+
+    D'.append((cleaned_text, final_entities))
+
+return D'
+\end{lstlisting}
+
 
 \subsubsection{BERT Token Alignment and BIO Tagging}
 
@@ -493,6 +549,46 @@ Each chunk was represented as a tuple of:
     \item \texttt{BIO\_labels}: A list of string tags in the BIO format, aligned to each token in \texttt{input\_ids}, indicating the token’s entity role. These labels are used as supervision signals during training and are ignored (or masked) for special tokens such as \texttt{[CLS]}, \texttt{[SEP]}, or padding tokens.
 \end{itemize}
 
+\begin{lstlisting}[language=Python, caption=NER Data Preparation for BERT Model (Pseudocode)]
+
+# Input: aligned_data = [(text, {"entities": [(start, end, label), ...]})]
+# Output: tokenized dataset with input_ids, token_labels, attention_masks
+
+# Step 1: Tokenize text and map entity spans to token-level labels
+tokenizer = BERT tokenizer
+for each (text, entities) in aligned_data:
+    tokenized = tokenizer(text, return_offsets_mapping=True)
+    labels = ['O'] for each token
+
+    for each entity (start_e, end_e, label_e):
+        for each token in tokenized:
+            if token position overlaps entity span:
+                label as 'B-Entity' for first token, 'I-Entity' for rest
+
+# Step 2: Handle long sequences using sliding windows
+max_seq_length = 512
+overlap_size = 50
+
+for each tokenized sequence:
+    if sequence length > max_seq_length:
+        split into overlapping chunks:
+            - Each chunk has [CLS] + tokens + [SEP]
+            - Overlap by 'overlap_size' tokens between consecutive chunks
+            - Adjust start index to avoid splitting entities mid-way
+        mark final chunk with end-of-document flag
+    else:
+        use as is, with attention mask and end-of-document flag
+
+# Step 3: Prepare final dataset
+Return:
+    - input_ids (tokenized sequences)
+    - token_labels (BIO format)
+    - attention_masks (1 for tokens, 0 for padding)
+    - end_of_document flag (1 for last chunk, 0 otherwise)
+
+\end{lstlisting}
+
+
 All data preprocessing and model training were implemented in \texttt{PyTorch}, using the HuggingFace \texttt{Transformers} and \texttt{Datasets} libraries. PyTorch was selected over TensorFlow for several reasons:
 \begin{itemize}
     \item It offers a more transparent and Pythonic programming model, which aligns well with the need for custom span adjustment, dynamic chunking, and debugging.
@@ -524,57 +620,40 @@ If this pattern matched a full address in the local context of the original pred
 \paragraph{Regex-Based Noise Cleanup.}
 Prior to matching, both the predicted address and OCR text were normalized by removing artificial symbols such as ``\#\#'' and collapsing whitespace around punctuation characters (e.g., turning ``1234 , Main St .'' into ``1234,Main St.''). This reduced the chances of tokenization artifacts interfering with pattern recognition.
 
-\bigskip
-\begin{algorithm}[H]
-\caption{Normalize Extracted Address Using Context-Aware Regex}
-\label{alg:address_normalization}
-\DontPrintSemicolon
+\begin{lstlisting}[language=Python, caption=Normalize Extracted Address Using Context-Aware Regex]
+# Input: DataFrame predictions_df, column name col (e.g., 'BUYER ADDRESS')
+# Output: Updated predictions_df[col] with improved address predictions
 
-\KwIn{DataFrame \texttt{predictions\_df}, column name \texttt{col} (e.g., BUYER ADDRESS)}
-\KwOut{Updated \texttt{predictions\_df[col]} with improved address predictions}
+# Define regex pattern:
+# - Street number (1-6 digits)
+# - Up to 75 arbitrary characters
+# - Valid US state (abbreviation or full name)
+# - Optional ZIP code
 
-\vspace{2mm}
-Define a regex \texttt{address\_pattern} composed of:\;
-\Indp
-Street number (1--6 digits) \\
-+ Up to 75 arbitrary characters \\
-+ Valid US state (abbreviation or full name) \\
-+ Optional ZIP code
-\Indm
+for each row in predictions_df:
 
-\vspace{2mm}
-\ForEach{row $i$ in \texttt{predictions\_df}}{
-    
-    Load the corresponding OCR text from file\;
+    # Load corresponding OCR text from file
 
-    \vspace{1mm}
-    Clean the OCR text by:\;
-    \Indp Remove symbols like ``\#\#'' and normalize spaces around punctuation\;
-    \Indm
+    # Clean OCR text:
+    # - Remove symbols like '##'
+    # - Normalize spaces around punctuation
 
-    \vspace{1mm}
-    \If{the predicted address in column \texttt{col} is not empty}{
-    
-        Clean the predicted address using the same rules\;
-        Escape the address to build a search pattern\;
+    if predicted address in column col is not empty:
 
-        \vspace{1mm}
-        \If{pattern is found in the OCR text}{
-            Extract a 100-character window around the match\;
+        # Clean predicted address using same rules
+        # Escape address string to build search pattern
 
-            Search the window using \texttt{address\_pattern}\;
+        if pattern is found in OCR text:
 
-            \If{a valid full address is found}{
-                Replace the predicted address with the full match\;
-            }
-        }
-    }
-}
+            # Extract a 100-character window around the match
+            # Search the window using address_pattern
 
-\vspace{2mm}
-\Return updated \texttt{predictions\_df}
-\end{algorithm}
-\bigskip
+            if valid full address is found:
+                Replace predicted address with the full match
+
+# Return updated predictions_df
+\end{lstlisting}
+
 
 
 \paragraph{Why Learning Alone Is Not Sufficient.}
@@ -614,61 +693,47 @@ This approach was robust to intervening text (e.g., introductory phrases or form
 \paragraph{Normalization and Assignment.}
 All matches were cleaned using whitespace and punctuation normalization to improve consistency with the rest of the dataset. The matched address was then written back to the \texttt{BUYER ADDRESS} column for the corresponding row in the prediction dataframe. 
 
-\vspace{8mm} % or \bigskip
+\vspace{16mm} 
 
+\begin{lstlisting}[language=Python, caption=Post-Hoc Buyer Address Recovery via Regex Anchored on Buyer Name or Organization]
+# Input: Predictions dataframe with missing 'BUYER ADDRESS' entries
+# Output: Updated 'BUYER ADDRESS' field for recovered entries
 
-\begin{algorithm}[H]
-\caption{Post-Hoc Buyer Address Recovery via Regex Anchored on Buyer Name or Organization}
-\DontPrintSemicolon
+Initialize recovered = 0
+missing_indices = indices where 'BUYER ADDRESS' is NaN
 
-\KwIn{Predictions dataframe with missing `BUYER ADDRESS` entries}
-\KwOut{Updated `BUYER ADDRESS` field for recovered entries}
+for i in missing_indices:
 
-Initialize $recovered \gets 0$ \;
-$missing\_indices \gets$ indices where BUYER ADDRESS is NaN \;
+    # Load OCR text from corresponding file path using 'IMAGENAME'
 
-\ForEach{$i \in missing\_indices$}{
+    if 'BUYER NAME' is not NaN:
+        Clean punctuation in buyer name
+        name_patterns = BuildNameRegexes(buyer name)
+    elif 'BUYER ORG' is not NaN:
+        Clean punctuation in buyer org
+        name_patterns = [buyer org]
+    else:
+        continue
 
-    Load OCR text from corresponding file path using \texttt{IMAGENAME} \;
+    buyer_addresses = []  # Empty list
 
-    \eIf{BUYER NAME is not NaN}{
-        Clean punctuation in buyer name\;
-        $name\_patterns \gets$ BuildNameRegexes(buyer name)\;
-    }{
-        \eIf{BUYER ORG is not NaN}{
-            Clean punctuation in buyer org\;
-            $name\_patterns \gets$ \{buyer org\}\;
-        }{
-            \textbf{continue}\;
-        }
-    }
+    for pattern in name_patterns:
+        # Construct regex pattern:
+        # - pattern + up to 100 characters
+        # - valid US state (full name or abbreviation)
+        # - 5-digit or 9-digit ZIP code
 
-    $buyer\_addresses \gets [~]$ \tcp*{Empty list}
+        if regex match found in OCR text:
+            Append matched address to buyer_addresses
 
-    \ForEach{$pattern \in name\_patterns$}{
-        Construct regex pattern:
-        \begin{itemize}
-            \item pattern + up to 100 characters
-            \item valid US state (full name or abbrev.)
-            \item 5-digit or 9-digit ZIP code
-        \end{itemize}
-        
-        \If{regex match found in OCR text}{
-            Append matched address to $buyer\_addresses$\;
-        }
-    }
+    if buyer_addresses is not empty:
+        Join all matched addresses into one string
+        Assign to 'BUYER ADDRESS' in predictions dataframe
+        recovered = recovered + 1
 
-    \If{$buyer\_addresses$ is not empty}{
-        Join all matched addresses into one string\;
-        Assign to `BUYER ADDRESS` in predictions dataframe\;
-        $recovered \gets recovered + 1$\;
-    }
-}
+Return updated predictions dataframe
+\end{lstlisting}
 
-\Return updated predictions dataframe \;
-\end{algorithm}
-
-\vspace{8mm} 
 
 
 \paragraph{Impact.}
@@ -853,6 +918,306 @@ This approach prioritizes precision while still accommodating common edge cases 
 \subsubsection{Summary}
 
 By combining flexible regular expressions with spatial anchoring and context-aware disambiguation, the system reliably extracts book and page identifiers across a wide variety of layouts. This design significantly reduces false positives without sacrificing recall, and ensures compatibility with downstream indexing and validation processes.
+
+\subsection{Tax and Consideration Amount Extraction Using Regular Expressions}
+
+The extraction of \textbf{taxes} and \textbf{consideration amounts} from deed documents presents a unique challenge due to the abundance of numeric values in legal texts and the linguistic variability of tax and price representations. A naive numeric extraction approach would lead to an overwhelming number of false positives. Therefore, a precise, pattern-based regex module was designed to not only identify the correct fields but also preserve essential contextual information---such as the \textbf{type of tax}---which is critical for downstream processes like sales price estimation.
+\\
+
+\subsubsection{Tax Field Extraction: Precision Through Contextual Anchoring}
+
+Tax fields in deed documents are rarely presented in a uniform format. They may appear as:
+\begin{itemize}
+    \item City Tax: \$123.45
+    \item Excise Tax - \$1,234.56
+    \item County Tax 145.00
+\end{itemize}
+
+Documents may contain multiple numeric amounts---ranging from unrelated fees to monetary penalties or even addresses with embedded numbers. Extracting only valid tax fields therefore requires not just identifying a dollar amount, but \textbf{pairing it with its tax type} (e.g., excise, stamp, city, county, or state tax). This pairing is essential because in many counties, the \textbf{sales price is not explicitly listed}; instead, it is inferred based on the tax amounts and county-specific multipliers. \\
+
+To achieve this, the regex module enforces a \textbf{key-value structure}:
+\begin{itemize}
+    \item \textbf{Prefix}: Tax type (e.g., ``excise tax'', ``city tax'', ``county tax'')
+    \item \textbf{Separator}: Flexible delimiter handling (e.g., colon, dash, whitespace)
+    \item \textbf{Numeric amount}: Dollar-prefixed amounts, with support for commas and decimals
+\end{itemize}
+
+This design ensures that spurious amounts---such as those in boilerplate legal text, embedded numeric IDs, or page numbers---are \textbf{excluded}. For example, a standalone numeric figure such as ``86.75'' in a document is ignored unless it appears within a tax-anchored context like ``City Tax: \$86.75''. This drastically reduces false positives and ensures that the extracted tax information is \textbf{semantically meaningful}. \\
+
+\subsubsection{Consideration Amount Extraction: Filtering Through Structural and Semantic Constraints}
+
+Consideration amounts, representing the \textbf{sales price} of a property, exhibit even greater linguistic variability. They may appear as fully written legal phrases, numeric expressions, or combinations thereof. For example:
+\begin{itemize}
+    \item One Hundred Forty-Five Thousand and 00/100 Dollars (\$145,000.00)
+    \item Consideration: \$245,000.00
+    \item The sum of Two Hundred Thousand Dollars
+\end{itemize}
+
+To avoid misclassifying unrelated numeric values (such as tax amounts or unrelated monetary references) as consideration amounts, the regex module employs a multi-layered filtering strategy:
+\begin{itemize}
+    \item \textbf{Anchored Keyword Patterns}: The regex is constrained to match only those numeric or verbal amounts that appear near explicit terms such as ``Consideration'', ``Sum'', ``Amount'', or ``Price''---within a defined character window (e.g., 100--200 characters).
+    \item \textbf{Dual Matching}: The regex can identify:\begin{itemize}
+        \item \textbf{Numeric-only patterns} (e.g., ``Consideration: \$245,000.00'')
+        \item \textbf{Hybrid patterns} combining verbal and numeric forms (e.g., ``One Hundred Twenty Thousand and NO/100 Dollars (\$120,000.00)'').
+    \end{itemize}
+    \item \textbf{False Positive Elimination}: The regex explicitly ignores amounts that appear without the correct legal context, ensuring that numeric values in isolation---such as in addresses, page numbers, or unrelated financial figures---are not misclassified.
+\end{itemize}
+
+Additionally, only amounts exceeding a practical threshold (e.g., \$10,000) are considered valid, further reducing noise.
+
+
+\subsubsection{Pseudocode Overview}
+
+The regex extraction modules for taxes and consideration amounts follow a structured pattern-matching approach. The design emphasizes contextual anchoring---constraining numeric extractions to legally relevant patterns by pairing them with tax types or explicit keywords like ``Consideration''. A high-level pseudocode description of the logic is as follows:
+
+\begin{lstlisting}[language=Python, caption={High-level Pseudocode for Tax and Consideration Extraction}]
+For each OCR-extracted document text:
+    1. For Tax Fields:
+        - Search for patterns matching:
+            (Tax Type) + (optional separator) + (Dollar Amount)
+        - Capture both the tax type (e.g., "Excise Tax") and the associated dollar amount.
+        - Example matches: "City Tax: $123.45", "Excise Tax - $1,234.56".
+        - Store results as (Tax Type, Amount) pairs.
+
+    2. For Consideration Amount:
+        - Search for patterns matching:
+            (Consideration/Sum/Amount/Price) + (optional intervening text) + 
+            (Amount in Words + Dollar Amount) OR (Standalone Dollar Amount)
+        - The "Amount in Words" pattern matches legal phrasing like:
+            "One Hundred Twenty Thousand and NO/100 Dollars".
+        - Example matches: 
+            "Consideration: One Hundred Forty-Five Thousand and 00/100 Dollars ($145,000.00)"
+            "Amount: $245,000.00"
+        - Validate numeric amounts by checking:
+            - Amount exceeds a threshold (e.g., $10,000).
+            - The pattern is anchored by relevant legal terms.
+
+    3. Clean and normalize numeric outputs:
+        - Remove extraneous characters (e.g., "$", ",", "(", ")").
+        - Convert amounts to floating-point numbers for downstream use.
+
+    4. Output:
+        - Tax extractions: List of (Tax Type, Amount) pairs.
+        - Consideration extraction: Single numeric value (largest valid match).
+\end{lstlisting}
+
+The core logic for parsing amounts in words---a critical component for handling legal formulations of consideration amounts---is built upon a hierarchical regex pattern. This pattern systematically models the structure of English number expressions:
+
+\begin{itemize}
+    \item \textbf{Single digits and teens:} e.g., ``one'', ``two'', ``fifteen''.
+    \item \textbf{Tens multiples:} e.g., ``twenty'', ``ninety''.
+    \item \textbf{Compound numbers:} e.g., ``seventy-five'' (captured by combining tens and units).
+    \item \textbf{Hundreds, thousands, millions:} Recursive structures allow for expressions such as:
+    \begin{quote}
+        ``One Hundred Twenty-Five Thousand'', \\
+        ``Two Million Three Hundred Fifty Thousand and 00/100''
+    \end{quote}
+    \item \textbf{Fractional components:} Legal suffixes such as ``and NO/100'' or ``and 00/100'' are included to match the complete legal phrasing of monetary amounts.
+\end{itemize}
+
+This hierarchical pattern enables accurate recognition of verbal numeric expressions, which are then integrated into the broader consideration amount regex. By combining the amount-in-words component with optional dollar amounts in parentheses (e.g., ``(\$125,000.00)''), the module robustly captures legal representations of sales prices in deed documents. \\
+
+This layered, context-sensitive design ensures that only legally meaningful monetary fields are extracted while minimizing false positives arising from incidental numeric values elsewhere in the text. \\
+
+
+The regex for consideration extraction integrates a multi-level hierarchy of cardinal and ordinal numbers (e.g., ``one'', ``twenty'', ``hundred'') to match amounts expressed in words. This pattern is crucial for handling legal formulations such as \textit{``One Hundred Fifty Thousand and NO/100 Dollars''}. The module combines these verbal expressions with numeric dollar amounts (e.g., ``(\$150,000.00)'') when both are present, ensuring robust parsing across diverse deed formats. \\
+
+This layered design, combining anchored keyword patterns with a dedicated verbal number parser, significantly improves precision and reduces false positives in the presence of multiple numeric values within legal documents.
+
+
+\subsubsection{Critical Role of Tax Data in Sales Price Estimation}
+
+It is important to emphasize that \textbf{tax data is not merely supplementary}; it plays a \textbf{critical role} in cases where the \textbf{consideration amount is absent}. Many counties in the United States permit sales price estimation based on recorded taxes, using jurisdiction-specific formulas (e.g., applying a known tax rate to the tax amount). Therefore, accurate extraction of \textbf{both the tax type and the associated amount} is essential for enabling downstream modules to estimate the sales price reliably when the original consideration is missing. \\
+
+This design ensures that the pipeline produces \textbf{high-precision, semantically rich extractions} that are both legally and practically relevant for property data analysis, valuation, and indexing.
+
+\subsection{Date Extraction and Classification: Document, Effective, and Signature Dates}
+
+\subsubsection{Significance of Date Fields in Deeds}
+
+Accurate extraction of date fields from deed documents is essential for establishing the legal validity and sequence of property transactions. Three key dates are typically of interest:
+\begin{itemize}
+    \item \textbf{Document Date:} The date when the deed is officially created and signed. This serves as the primary legal reference for the transaction and is typically the first of the three date types to appear in the document, based on spatial order.
+    \item \textbf{Effective Date:} The date when the deed takes legal effect, which may differ from the document date due to contract terms or recording delays. It is usually identifiable by the presence of keywords such as \textit{``effective''} immediately before or after the date.
+    \item \textbf{Signature Date:} The date when the grantor or authorized party signed the deed, typically found near notary blocks or attestation clauses. It is detected by identifying proximity to phrases such as \textit{``witness whereof''}, \textit{``before me''}, or \textit{``subscribed and sworn''}.
+\end{itemize}
+
+While most documents contain only one of these three date types, the system is designed to output \textbf{only a single date per document}, even in the rare cases (approximately 1\% of all documents) where multiple distinct dates are present. This pragmatic design choice ensures consistent field mapping and simplifies downstream processing.
+
+\subsubsection{Date Pattern Construction and Preprocessing}
+
+A comprehensive regular expression pattern was constructed to detect a wide range of date formats. The pattern captures:
+\begin{itemize}
+    \item Numeric dates: \texttt{YYYY-MM-DD}, \texttt{MM/DD/YYYY}, \texttt{DD.MM.YYYY}, with flexible delimiters (hyphens, slashes, dots).
+    \item Formal legal phrasing: e.g., \textit{``the 27th day of January, 2024''}, \textit{``January 27, 2024''}.
+    \item Month-first formats: e.g., \textit{``January 5, 2023''}, \textit{``2023 March 5''}.
+\end{itemize}
+
+To enhance parsing accuracy, minor preprocessing steps are applied:
+\begin{itemize}
+    \item Removal of verbose legal tokens such as \textit{``day of''}, converting \textit{``27th day of January''} to \textit{``27 January''}.
+    \item Standardization of whitespace and punctuation.
+\end{itemize}
+
+Parsed date strings are passed to the \texttt{dateparser} library for robust date normalization. The system retains the character-level spans of each matched date, enabling downstream classification based on spatial context rather than date values alone. This is essential because different date types (e.g., document date and recording date) may have identical values but distinct legal meanings, distinguished only by their location within the document.
+
+\subsubsection{Classification Logic for Document, Effective, and Signature Dates}
+
+The classification logic follows a rule-based approach grounded in spatial and contextual heuristics:
+\begin{enumerate}
+    \item \textbf{Recording Date Filtering:} Dates explicitly associated with the recording date (identified via positional spans) are excluded from further consideration. This step prevents the misclassification of recording dates, which often appear multiple times in the document and may numerically coincide with other dates.
+    
+    \item \textbf{Effective Date Detection:} A date is classified as the effective date if the keyword \textit{``effective''} appears within a 200-character window immediately before or after the date match.
+    
+    \item \textbf{Signature Date Detection:} Dates occurring within approximately 100 words of phrases such as \textit{``witness whereof''}, \textit{``before me''}, or \textit{``subscribed and sworn''} are classified as signature dates.
+    
+    \item \textbf{Document Date Selection:} When present, the document date is classified as the \textbf{first of the three date types to appear in spatial order within the document}, provided it is not spatially associated with signature-related phrases.
+\end{enumerate}
+
+\textbf{Limitation:} The current system is designed to extract only \textbf{one date per document}, corresponding to the most probable classification based on the above rules. While this may lead to occasional omissions in multi-date scenarios, such cases are rare (approximately 1\% of documents), and the trade-off is acceptable in the context of large-scale processing.
+
+\subsubsection{Pseudocode for Date Extraction and Classification}
+
+The overall procedure is as follows:
+
+\begin{lstlisting}[language=Python, caption={Pseudocode for Date Extraction and Classification}]
+For each OCR-extracted document text:
+    1. Use regex to match all potential date patterns:
+        - Formats: YYYY-MM-DD, MM/DD/YYYY, "27th day of January 2024", etc.
+        - Retain matched spans for positional filtering.
+    
+    2. Preprocess date strings:
+        - Remove verbose tokens like "day of", standardize whitespace.
+        - Parse cleaned strings into datetime objects using dateparser.
+    
+    3. Filter out recording dates:
+        - Exclude dates whose spans overlap with recording date matches.
+    
+    4. Classify remaining dates:
+        - Document Date: First date by spatial order in the document.
+        - Effective Date: Date with "effective" keyword in immediate context.
+        - Signature Date: Date near phrases like "witness whereof", "subscribed and sworn".
+    
+    5. Return a single classified date per document:
+        - Document Date (if detected), else Effective or Signature Date.
+\end{lstlisting}
+
+This hybrid approach combines state-of-the-art OCR capabilities (via Azure OCR) for accurate text extraction—including handwritten dates—with a robust, context-aware pattern matching and classification pipeline, ensuring reliable extraction of legally significant date fields for downstream workflows.
+
+\subsection{Post-Processing and Normalization: Names and Addresses}
+
+The data extraction pipeline extends beyond field extraction; it includes rigorous post-processing and normalization to ensure that the output data is standardized and fit for integration into a consolidated property database. Extracted fields—particularly names and addresses—exhibit considerable variability due to document formatting inconsistencies, abbreviations, and free-text entries. Therefore, dedicated pipelines were developed for both \textbf{name parsing} and \textbf{address normalization}.
+
+\subsubsection{Name Parsing and Standardization}
+
+The name post-processing pipeline transforms raw name fields into structured components, enabling accurate property ownership mapping. The core logic includes:
+
+\begin{enumerate}
+    \item \textbf{Cleaning:} Remove extraneous text, such as trailing numbers, that may arise from OCR errors (e.g., ``John Doe 12345'' becomes ``John Doe'').
+    
+    \item \textbf{Splitting Multiple Parties:} Names concatenated with delimiters (e.g., ``John Doe \^{} Jane Smith'') are separated into individual entities for independent parsing.
+    
+    \item \textbf{Name Component Parsing:} Each entity is parsed based on its format:
+    \begin{itemize}
+        \item Comma-separated entries (e.g., ``Doe, John'') are interpreted as ``Last, First Middle''.
+        \item Non-comma entries are split based on the position of tokens, with the last token treated as the last name.
+        \item Special cases (e.g., names with periods like ``J.Doe'') are handled by splitting on the period.
+    \end{itemize}
+    
+    \item \textbf{Non-Individual Name Handling:} Entities identified as organizations (e.g., ``ABC LLC'') are preserved as a single non-individual field.
+    
+    \item \textbf{Structured Output:} Parsed components (\texttt{first\_middle}, \texttt{last}, \texttt{non\_individual}) are flattened into a consistent schema with suffixes (e.g., \texttt{buyer\_first\_middle.0}, \texttt{buyer\_last.0}).
+\end{enumerate}
+
+This structured output supports reliable entity resolution, deduplication, and database integration.
+
+\subsubsection{Address Normalization Pipeline}
+
+Address fields in deed documents are often embedded within unstructured text, with variable formats and extraneous phrases. Extracting clean, structured address components is critical for reliable property indexing and matching. The address normalization pipeline integrates \textbf{Libpostal}, an open-source probabilistic address parsing model, with custom heuristics to achieve robust normalization. \\
+
+\textbf{Libpostal Overview:}  
+Libpostal is a machine learning-based parser trained on millions of real-world global address examples. It tokenizes raw address strings into labeled components such as \texttt{house\_number}, \texttt{road}, \texttt{unit}, \texttt{city}, \texttt{state}, and \texttt{postcode}. While Libpostal’s flexibility allows it to handle diverse address formats, it can be \textbf{overly aggressive} in parsing: it often labels surrounding descriptive text—such as \textit{``the address of the property is''}—as address components like roads. This misclassification of non-address text is a common challenge in unstructured legal documents.
+
+\textbf{Address Normalization Process:}
+
+\begin{enumerate}
+    \item \textbf{Libpostal Parsing:} Each raw address string is passed through Libpostal to produce an initial set of token-label pairs. For example:
+
+    \begin{itemize}
+        \item Raw text:
+        \[
+        \begin{minipage}{\textwidth}
+        \texttt{the address of the property is 123 Southwest Main Street} \\
+        \texttt{Apt 4B, Springfield, IL 62704}
+        \end{minipage}
+
+        \]
+        \item Parsed output:
+        \begin{align*}
+            &[("the", road), ("address", road), ("of", road), ("the", road), ("property", road), ("is", road), \\
+            &\ \ ("123", house\_number), ("Southwest", road), ("Main", road), ("Street", road), \\
+            &\ \ ("Apt", unit), ("4B", unit), ("Springfield", city), ("IL", state), ("62704", postcode)]
+        \end{align*}
+    \end{itemize}
+
+    \item \textbf{Last House Number Selection as Anchor:}  
+    The pipeline selects the \textbf{last occurrence of a house number} as the true starting point of the address. This decision is based on the observation that in noisy text, extraneous phrases (e.g., ``the address of the property is'') often precede the actual address, and Libpostal may mislabel them as address components.
+
+    \item \textbf{Positional Filtering of Components:}  
+    After identifying the valid house number:
+    \begin{itemize}
+        \item Remaining components (e.g., \texttt{road}, \texttt{unit}, \texttt{city}) are retained only if they appear \textbf{after the house number} and \textbf{before the postcode} in the original raw text.
+        \item This span-based filtering is essential for excluding surrounding non-address phrases misclassified by Libpostal. For example, in the case:
+        \[
+        \texttt{"the address of the property is 123 Southwest Main Street"}
+        \]
+        the phrase \texttt{"the address of the property is"} may be parsed as multiple road components. Span filtering ensures only tokens \textbf{within the valid address bounds} are retained.
+
+        \item The \texttt{road} field is additionally validated by checking that its span falls within the house number–postcode boundary.
+    \end{itemize}
+
+    \item \textbf{Directional Normalization:}  
+    Street names are decomposed into directional components using a custom \texttt{extract\_directionals()} function:
+    \begin{itemize}
+        \item Directional prefixes (e.g., ``North'', ``Southwest'') before the street name are normalized to USPS abbreviations (e.g., ``N'', ``SW'').
+        \item Directional suffixes after the street name are similarly normalized.
+        \item For example:
+        \[
+        \texttt{Southwest Main Street} \rightarrow \texttt{SW Main Street}
+        \]
+    \end{itemize}
+
+    \item \textbf{Postcode Splitting:}  
+    Zip codes with a 4-digit extension (e.g., \texttt{62704-1234}) are split into:
+    \[
+    \texttt{postcode} = 62704, \quad \texttt{postcode\_ext} = 1234
+    \]
+
+    \item \textbf{Final Output Mapping:}  
+    The parsed and filtered output is reversed (mapping field names to values) and integrated into the master DataFrame with consistent column prefixes (e.g., \texttt{buyer\_}, \texttt{property\_}). The final schema includes:
+    \begin{align*}
+    &\texttt{buyer\_house\_number}, \quad \texttt{buyer\_road}, \quad \texttt{buyer\_directional\_prefix}, \quad \texttt{buyer\_directional\_suffix}, \\
+    &\texttt{buyer\_unit}, \quad \texttt{buyer\_city}, \quad \texttt{buyer\_state}, \quad \texttt{buyer\_postcode}, \quad \texttt{buyer\_postcode\_ext}
+    \end{align*}
+    with equivalent fields for seller and property addresses.
+
+    \item \textbf{Final Data Integration:}  
+    The normalized address fields are concatenated into the master DataFrame, producing a fully structured dataset ready for geocoding, matching, and property database ingestion.
+\end{enumerate}
+
+This rigorous combination of Libpostal parsing, span-based filtering, and directional normalization ensures high-quality address data, even when surrounding descriptive text is present in the raw OCR output.
+
+
+\subsubsection{Significance for Property Data Systems}
+
+Post-processing and normalization are essential for transforming raw OCR outputs into a structured, queryable format suitable for property database ingestion. Specifically:
+\begin{itemize}
+    \item \textbf{Consistency:} Standardized naming and address conventions ensure uniformity across records from different jurisdictions and formats.
+    \item \textbf{Downstream Utility:} Cleaned names and addresses facilitate entity resolution, geocoding, and integration with external property datasets.
+    \item \textbf{Data Quality:} By handling both individual and organizational names and normalizing addresses into discrete fields, the pipeline enables accurate ownership mapping, title chain reconstruction, and property-level analytics.
+\end{itemize}
+
+Together, the name and address post-processing modules bridge the gap between raw data extraction and the structured data requirements of a scalable, high-accuracy property information system.
 
 
 
