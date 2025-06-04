@@ -135,7 +135,7 @@ Format variations include:
 
 \subsection{Linguistic Variability and the Limitations of Rule-Based Extraction}
 
-In addition to layout variability, deeds also exhibit significant linguistic variation. Important fields are often embedded within long, formal legal sentences using archaic language and inconsistent phrasing. This makes extraction using rigid rule-based methods unreliable.
+In addition to layout variability, deeds also exhibit significant linguistic variation. Important fields are often embedded within long, formal legal sentences using archaic language and inconsistent phrasing. This makes extraction using rigid rule-based methods unreliable. \cite{harriscountydeeds}
 
 \textbf{Example 1: Grantee (Buyer) Name}
 \begin{quote}
@@ -174,13 +174,13 @@ Machine learning-based techniques offer a more robust alternative, particularly 
 
 Named Entity Recognition (NER) is a token-level classification task that aims to identify and label key entities in unstructured text. In the context of real estate deeds, this includes fields such as names, addresses, dates, and parcel identifiers. Given the wide variation in how such entities are expressed, selecting an appropriate NER model is critical. \\
 
-Traditional approaches to NER include statistical models like Conditional Random Fields (CRFs), which rely on handcrafted features and perform well when entity boundaries are predictable. However, they struggle to generalize to linguistically diverse inputs without extensive feature engineering. \\
+Traditional approaches to NER include statistical models like Conditional Random Fields (CRFs), \cite{lafferty2001conditional} which rely on handcrafted features and perform well when entity boundaries are predictable. However, they struggle to generalize to linguistically diverse inputs without extensive feature engineering. \\
 
-Recurrent neural network-based models, such as Bidirectional LSTMs (BiLSTMs), improved performance by learning contextual representations of tokens in sequence. While BiLSTMs capture dependencies in both directions, they are inherently sequential, which limits their scalability and ability to model long-range dependencies effectively. \\
+Recurrent neural network-based models, such as Bidirectional LSTMs (BiLSTMs) \cite{huang2015bidirectional}, improved performance by learning contextual representations of tokens in sequence. While BiLSTMs capture dependencies in both directions, they are inherently sequential, which limits their scalability and ability to model long-range dependencies effectively. \\
 
 Transformer-based models have since become the state-of-the-art in NER, thanks to their ability to model global context using self-attention. These models process all tokens in parallel and weigh relationships between them dynamically, making them well-suited for complex, unstructured language like that found in legal documents. \\
 
-Among transformer-based models, BERT (Bidirectional Encoder Representations from Transformers) has consistently achieved strong performance on NER benchmarks. BERT is pre-trained on large corpora using masked language modeling and is particularly effective at understanding the contextual meaning of words in varying syntactic and semantic environments. \\
+Among transformer-based models, BERT (Bidirectional Encoder Representations from Transformers) \cite{devlin2018bert} has consistently achieved strong performance on NER benchmarks. BERT is pre-trained on large corpora using masked language modeling and is particularly effective at understanding the contextual meaning of words in varying syntactic and semantic environments. \\
 
 
 One defining characteristic of BERT is its ability to process text bidirectionally. Unlike models that read left-to-right (e.g., GPT), bidirectional models consider both the left and right context of each token. For example, understanding whether "Jordan" refers to a person or a location often depends on the surrounding words on both sides. This bidirectionality is critical in NER, where the correct interpretation of a token frequently relies on full sentence context. \\
@@ -195,9 +195,9 @@ While transformer-based models such as BERT have demonstrated strong performance
 
 \textbf{1. Lack of pretraining on numeric patterns:} BERT is pretrained on large, general-purpose corpora such as Wikipedia and BookCorpus. These datasets are rich in natural language but sparse in structured numerical expressions. As a result, BERT does not natively learn how to handle patterns such as ``2021-048293'' or ``Book 8472, Page 392''. \\
 
-\textbf{2. Tokenisation issues:} BERT's WordPiece tokenizer tends to split numeric tokens into multiple subword units. For example, a document number like ``2021-048293'' may be tokenized into segments such as ``2021'', ``-``, ``048'', and ``293'', breaking up the semantic unity of the field and introducing noise during classification. \\
+\textbf{2. Tokenisation issues:} BERT's WordPiece tokenizer tends to split numeric tokens into multiple subword units. \cite{schuster2012japanese} For example, a document number like ``2021-048293'' may be tokenized into segments such as ``2021'', ``-``, ``048'', and ``293'', breaking up the semantic unity of the field and introducing noise during classification. \\
 
-\textbf{3. No inductive bias for numeric structures:} Unlike rule-based systems, BERT has no built-in understanding that patterns like ``Book No. 8472'' or ``Parcel ID 220-064-017'' belong to a specific field type. It treats these tokens like any other arbitrary text, unless it has seen enough similar examples during fine-tuning. \\
+\textbf{3. No inductive bias for numeric structures:} Unlike rule-based systems, BERT has no built-in understanding that patterns like ``Book No. 8472'' or ``Parcel ID 220-064-017'' belong to a specific field type. It treats these tokens like any other arbitrary text, unless it has seen enough similar examples during fine-tuning. \cite{wallace2019nlpnumber} \\
 
 \textbf{4. Attention dilution in long sentences:} In lengthy legal sentences, short numeric spans may receive disproportionately low attention weights. Without explicit positional guidance or layout cues, BERT may fail to assign sufficient importance to these spans. \\
 
@@ -205,7 +205,7 @@ While transformer-based models such as BERT have demonstrated strong performance
 
 \subsection{Regular Expressions for Field Extraction}
 
-Regular expressions (regex) are a foundational tool for pattern matching, used to identify specific sequences of characters within text. In the context of field extraction from deed documents, regex facilitates the identification of structured tokens such as document numbers, dates, and parcel identifiers based on predefined textual patterns. \\
+Regular expressions (regex) are a foundational tool for pattern matching, used to identify specific sequences of characters within text. \cite{friedl2006regex} In the context of field extraction from deed documents, regex facilitates the identification of structured tokens such as document numbers, dates, and parcel identifiers based on predefined textual patterns. \\
 
 Regex enables the construction of both primitive and compound expressions. Primitive patterns match basic components—for example, \textbackslash d+ matches one or more digits, [-/] matches common separators, and \textbackslash b denotes word boundaries. These can be composed into more complex expressions to capture specific formats. For instance, a document number like "2021-048293" can be matched using \textbackslash d{4}-\textbackslash d{6}, while dates such as "06/14/2021" or "June 14, 2021" can be captured with tailored alternatives. \\
 
@@ -231,11 +231,11 @@ While BERT may not excel at extracting exact numeric values, it often correctly 
 
 Natural language is inherently symbolic and discrete, making it incompatible with numerical models unless converted into a continuous representation. Early approaches such as one-hot encoding represent words as binary vectors with dimensionality equal to the vocabulary size $V$. However, one-hot vectors suffer from two major drawbacks: they are sparse, and they encode no semantic similarity (e.g., the vectors for \texttt{dog} and \texttt{cat} are orthogonal despite their similarity).
 
-To address this, we map each word $w_i$ to a dense, continuous embedding vector $\mathbf{e}_i \in \mathbb{R}^d$ such that semantically similar words are closer in Euclidean or cosine space. One popular method to learn such embeddings is the Continuous Bag of Words (CBOW) model, proposed as part of Word2Vec.
+To address this, we map each word $w_i$ to a dense, continuous embedding vector $\mathbf{e}_i \in \mathbb{R}^d$ such that semantically similar words are closer in Euclidean or cosine space.  One popular method to learn such embeddings is the Continuous Bag of Words (CBOW) model, proposed as part of Word2Vec.
 
 \subsubsection{CBOW Architecture}
 
-The CBOW model is a shallow neural network that predicts a target word given its surrounding context words. Given a context window size $c$, the model takes the $2c$ words surrounding a center word $w_t$ and aims to predict $w_t$. The context words are encoded as one-hot vectors $\mathbf{x}_j \in \mathbb{R}^V$, which are projected into embeddings using a shared matrix $W \in \mathbb{R}^{V \times d}$:
+The CBOW model is a shallow neural network that predicts a target word given its surrounding context words \cite{mikolov2013efficient}. Given a context window size $c$, the model takes the $2c$ words surrounding a center word $w_t$ and aims to predict $w_t$. The context words are encoded as one-hot vectors $\mathbf{x}_j \in \mathbb{R}^V$, which are projected into embeddings using a shared matrix $W \in \mathbb{R}^{V \times d}$:
 
 \[
 \mathbf{v}_j = W^\top \mathbf{x}_j
@@ -267,7 +267,7 @@ Furthermore, the CBOW model treats the input as a bag-of-words and averages the 
 
 \subsection{Transformers: Contextual Embeddings through Self-Attention}
 
-To address these limitations, transformer models were introduced by Vaswani et al.~(2017), providing a mechanism to learn context-sensitive embeddings without recurrence. In this architecture, every token can attend to all other tokens in the sequence using a mechanism called \emph{self-attention}, allowing it to dynamically weight the influence of different context words.
+To address these limitations, transformer models were introduced by Vaswani et al.~(2017), \cite{vaswani2017attention} providing a mechanism to learn context-sensitive embeddings without recurrence. In this architecture, every token can attend to all other tokens in the sequence using a mechanism called \emph{self-attention}, allowing it to dynamically weight the influence of different context words.
 
 \subsubsection{Input Representations}
 
@@ -347,14 +347,14 @@ This allows the model to handle out-of-vocabulary words more gracefully. However
 
 \subsubsection{Entity Tagging Schemes}
 
-We adopt the IOB tagging format to annotate entities:
+We adopt the IOB tagging format \cite{ramshaw1995text} to annotate entities:
 \begin{itemize}
     \item \texttt{B-FIELD}: Beginning of a field (e.g., \texttt{B-BUYER\_NAME})
     \item \texttt{I-FIELD}: Inside a field span
     \item \texttt{O}: Outside any entity
 \end{itemize}
 
-Alternatively, more expressive schemes like BILOU (Begin, Inside, Last, Outside, Unit) can be used to better capture field boundaries, but IOB remains standard in many NER datasets and is compatible with BERT’s token-level classification setup.
+Alternatively, more expressive schemes like BILOU (Begin, Inside, Last, Outside, Unit) \cite{ratinov2009design} can be used to better capture field boundaries, but IOB remains standard in many NER datasets and is compatible with BERT’s token-level classification setup.
 
 \subsubsection{Token Classification Layer}
 
@@ -370,7 +370,7 @@ where $\mathbf{W} \in \mathbb{R}^{C \times d}$ and $\mathbf{b} \in \mathbb{R}^C$
 \mathcal{L}_{\text{NER}} = -\sum_{i=1}^{n} \sum_{c=1}^{C} y_{i,c}^{\text{true}} \log(y_{i,c}^{\text{pred}})
 \]
 
-During training, gradients are backpropagated through both the classification head and BERT encoder layers, updating all parameters via gradient descent. This fine-tuning allows the model to adapt its general linguistic knowledge to the domain-specific patterns in real estate documents.
+During training, gradients are backpropagated \cite{rumelhart1986learning} through both the classification head and BERT encoder layers, updating all parameters via gradient descent. This fine-tuning allows the model to adapt its general linguistic knowledge to the domain-specific patterns in real estate documents.
 
 \subsubsection{Training Setup}
 
@@ -436,7 +436,7 @@ This clipping strategy reduced label noise caused by partially included tokens, 
 
 \subsubsection{Conversion to SpaCy-Compatible Format}
 
-To ensure that annotated entity spans align correctly with token boundaries, each cleaned document was processed using \texttt{spaCy}, a widely used open-source natural language processing (NLP) library that provides efficient tokenization and linguistic annotations. \\
+To ensure that annotated entity spans align correctly with token boundaries, each cleaned document was processed using \texttt{spaCy}, a widely used open-source natural language processing (NLP) library that provides efficient tokenization and linguistic annotations \cite{spacy}. \\
 
 In \texttt{spaCy}, a processed document is represented by a \texttt{Doc} object. This object contains the original text along with tokenization metadata such as token indices and their corresponding character-level start and end positions. By converting each raw text string into a \texttt{Doc} object using \texttt{nlp.make\_doc(text)}, the pipeline gains access to this token structure, which is critical for aligning annotated character spans with tokens. \\
 
@@ -448,7 +448,6 @@ The \texttt{"expand"} mode resolves this by stretching the character span outwar
 
 By leveraging spaCy’s alignment functionality in this way, the pipeline robustly transformed noisy, potentially misaligned entity annotations into token-aligned spans. This step was essential to bridge the gap between raw OCR-derived annotations and the requirements of models like BERT, which expect input labels to be defined at the token level.
 
-\begin{document}
 
 \begin{lstlisting}[language=Python, caption=Entity Alignment and Cleaning Pipeline (Pseudocode)]
 # Input: Annotated dataset D = [(text, entities)], Regex patterns P = [p1, p2, ...]
@@ -532,7 +531,7 @@ Special tokens such as \texttt{[CLS]} and \texttt{[SEP]}, which have no correspo
 
 \subsubsection{Final Output Format and Chunked Encoding Strategy}
 
-Since many deed documents are longer than the 512-token limit imposed by BERT-based models, each tokenized document was split into overlapping fixed-length chunks. Specifically, a sliding window approach was used to create chunks of 512 tokens with a 50-token overlap between consecutive segments. \\
+Since many deed documents are longer than the 512-token limit imposed by BERT-based models, each tokenized document was split into overlapping fixed-length chunks. Specifically, a sliding window approach was used to create chunks of 512 tokens with a 50-token overlap between consecutive segments. \cite {wolf2020transformers}\\
 
 This chunking strategy addresses a core limitation of transformer models: they cannot attend to arbitrarily long sequences. However, naively truncating the document risks discarding important contextual information, particularly if an entity or its relevant keywords are split across chunk boundaries. The overlapping window mitigates this risk. By allowing 50 tokens of shared context between adjacent chunks, the model retains access to partial upstream context in subsequent windows, increasing the likelihood that fragmented entities can still be captured. \\
 
@@ -589,7 +588,7 @@ Return:
 \end{lstlisting}
 
 
-All data preprocessing and model training were implemented in \texttt{PyTorch}, using the HuggingFace \texttt{Transformers} and \texttt{Datasets} libraries. PyTorch was selected over TensorFlow for several reasons:
+All data preprocessing and model training were implemented in \texttt{PyTorch} \cite{paszke2019pytorch}, using the HuggingFace \texttt{Transformers} and \texttt{Datasets} libraries. PyTorch was selected over TensorFlow for several reasons:
 \begin{itemize}
     \item It offers a more transparent and Pythonic programming model, which aligns well with the need for custom span adjustment, dynamic chunking, and debugging.
     \item PyTorch is the default backend for HuggingFace models and integrates seamlessly with its tokenizers, model classes, and training utilities.
@@ -657,7 +656,7 @@ for each row in predictions_df:
 
 
 \paragraph{Why Learning Alone Is Not Sufficient.}
-Although BERT can infer what constitutes an address based on training examples, it cannot enforce formatting constraints at inference time. There is no architectural mechanism to guarantee that a ZIP code, state abbreviation, or house number is present. The inclusion of rule-based post-processing thus complements the model by injecting structural priors into the pipeline — a form of hybrid learning and validation that improves precision without sacrificing recall.
+Although BERT can infer what constitutes an address based on training examples, it cannot enforce formatting constraints at inference time. \cite{chiticariu2010systemt} There is no architectural mechanism to guarantee that a ZIP code, state abbreviation, or house number is present. The inclusion of rule-based post-processing thus complements the model by injecting structural priors into the pipeline — a form of hybrid learning and validation that improves precision without sacrificing recall.
 
 \subsection{Post-Hoc Recovery of Missing Buyer Addresses}
 
@@ -1027,7 +1026,7 @@ This layered design, combining anchored keyword patterns with a dedicated verbal
 
 \subsubsection{Critical Role of Tax Data in Sales Price Estimation}
 
-It is important to emphasize that \textbf{tax data is not merely supplementary}; it plays a \textbf{critical role} in cases where the \textbf{consideration amount is absent}. Many counties in the United States permit sales price estimation based on recorded taxes, using jurisdiction-specific formulas (e.g., applying a known tax rate to the tax amount). Therefore, accurate extraction of \textbf{both the tax type and the associated amount} is essential for enabling downstream modules to estimate the sales price reliably when the original consideration is missing. \\
+It is important to emphasize that \textbf{tax data is not merely supplementary}; it plays a \textbf{critical role} in cases where the \textbf{consideration amount is absent}. Many counties in the United States permit sales price estimation based on recorded taxes, using jurisdiction-specific formulas (e.g., applying a known tax rate to the tax amount). \cite{nj_realty_transfer_fee} Therefore, accurate extraction of \textbf{both the tax type and the associated amount} is essential for enabling downstream modules to estimate the sales price reliably when the original consideration is missing. \\
 
 This design ensures that the pipeline produces \textbf{high-precision, semantically rich extractions} that are both legally and practically relevant for property data analysis, valuation, and indexing.
 
@@ -1037,9 +1036,9 @@ This design ensures that the pipeline produces \textbf{high-precision, semantica
 
 Accurate extraction of date fields from deed documents is essential for establishing the legal validity and sequence of property transactions. Three key dates are typically of interest:
 \begin{itemize}
-    \item \textbf{Document Date:} The date when the deed is officially created and signed. This serves as the primary legal reference for the transaction and is typically the first of the three date types to appear in the document, based on spatial order.
-    \item \textbf{Effective Date:} The date when the deed takes legal effect, which may differ from the document date due to contract terms or recording delays. It is usually identifiable by the presence of keywords such as \textit{``effective''} immediately before or after the date.
-    \item \textbf{Signature Date:} The date when the grantor or authorized party signed the deed, typically found near notary blocks or attestation clauses. It is detected by identifying proximity to phrases such as \textit{``witness whereof''}, \textit{``before me''}, or \textit{``subscribed and sworn''}.
+    \item \textbf{Document Date:} The date when the deed is officially created and signed. This serves as the primary legal reference for the transaction and is typically the first of the three date types to appear in the document, based on spatial order \cite{johnantell_document_dates}.
+    \item \textbf{Effective Date:} The date when the deed takes legal effect, which may differ from the document date due to contract terms or recording delays. It is usually identifiable by the presence of keywords such as \textit{``effective''} immediately before or after the date \cite{fastercapital_effective_dates}.
+    \item \textbf{Signature Date:} The date when the grantor or authorized party signed the deed, typically found near notary blocks or attestation clauses. It is detected by identifying proximity to phrases such as \textit{``witness whereof''}, \textit{``before me''}, or \textit{``subscribed and sworn''} \cite{cassiefinance_signature_date}.
 \end{itemize}
 
 While most documents contain only one of these three date types, the system is designed to output \textbf{only a single date per document}, even in the rare cases (approximately 1\% of all documents) where multiple distinct dates are present. This pragmatic design choice ensures consistent field mapping and simplifies downstream processing.
@@ -1059,7 +1058,7 @@ To enhance parsing accuracy, minor preprocessing steps are applied:
     \item Standardization of whitespace and punctuation.
 \end{itemize}
 
-Parsed date strings are passed to the \texttt{dateparser} library for robust date normalization. The system retains the character-level spans of each matched date, enabling downstream classification based on spatial context rather than date values alone. This is essential because different date types (e.g., document date and recording date) may have identical values but distinct legal meanings, distinguished only by their location within the document.
+Parsed date strings are passed to the \texttt{dateparser} library for robust date normalization. \cite{dateparser} The system retains the character-level spans of each matched date, enabling downstream classification based on spatial context rather than date values alone. This is essential because different date types (e.g., document date and recording date) may have identical values but distinct legal meanings, distinguished only by their location within the document.
 
 \subsubsection{Classification Logic for Document, Effective, and Signature Dates}
 
@@ -1136,7 +1135,7 @@ This structured output supports reliable entity resolution, deduplication, and d
 Address fields in deed documents are often embedded within unstructured text, with variable formats and extraneous phrases. Extracting clean, structured address components is critical for reliable property indexing and matching. The address normalization pipeline integrates \textbf{Libpostal}, an open-source probabilistic address parsing model, with custom heuristics to achieve robust normalization. \\
 
 \textbf{Libpostal Overview:}  
-Libpostal is a machine learning-based parser trained on millions of real-world global address examples. It tokenizes raw address strings into labeled components such as \texttt{house\_number}, \texttt{road}, \texttt{unit}, \texttt{city}, \texttt{state}, and \texttt{postcode}. While Libpostal’s flexibility allows it to handle diverse address formats, it can be \textbf{overly aggressive} in parsing: it often labels surrounding descriptive text—such as \textit{``the address of the property is''}—as address components like roads. This misclassification of non-address text is a common challenge in unstructured legal documents.
+Libpostal is a machine learning-based parser trained on millions of real-world global address examples. \cite{libpostal} It tokenizes raw address strings into labeled components such as \texttt{house\_number}, \texttt{road}, \texttt{unit}, \texttt{city}, \texttt{state}, and \texttt{postcode}. While Libpostal’s flexibility allows it to handle diverse address formats, it can be \textbf{overly aggressive} in parsing: it often labels surrounding descriptive text—such as \textit{``the address of the property is''}—as address components like roads. This misclassification of non-address text is a common challenge in unstructured legal documents.
 
 \textbf{Address Normalization Process:}
 
@@ -1210,7 +1209,7 @@ This rigorous combination of Libpostal parsing, span-based filtering, and direct
 
 \subsubsection{Significance for Property Data Systems}
 
-Post-processing and normalization are essential for transforming raw OCR outputs into a structured, queryable format suitable for property database ingestion. Specifically:
+Post-processing and normalization are essential for transforming raw OCR outputs into a structured, queryable format suitable for property database ingestion. \cite{oracle_address_cleansing} Specifically:
 \begin{itemize}
     \item \textbf{Consistency:} Standardized naming and address conventions ensure uniformity across records from different jurisdictions and formats.
     \item \textbf{Downstream Utility:} Cleaned names and addresses facilitate entity resolution, geocoding, and integration with external property datasets.
@@ -1219,6 +1218,211 @@ Post-processing and normalization are essential for transforming raw OCR outputs
 
 Together, the name and address post-processing modules bridge the gap between raw data extraction and the structured data requirements of a scalable, high-accuracy property information system.
 
+\section{Results and Evaluation}
+
+To evaluate the performance of the hybrid data extraction system, a test set of \textbf{1,965 real estate deed documents} was curated. This dataset was intentionally constructed to test both in-domain accuracy and generalization to unseen document subtypes:
+
+\begin{itemize}
+    \item \textbf{1,000 documents} were drawn from deed types included in the training data, such as warranty deeds and statutory warranty deeds.
+    \item \textbf{965 documents} consisted of \textit{out-of-distribution} deed subtypes not encountered during training, including vendor lien variants and documents from new counties with divergent layouts.
+\end{itemize}
+
+This balanced setup allows us to assess the pipeline's robustness in both known and novel contexts.
+
+\subsection{Field-Level Precision and Recall}
+
+Each field was evaluated using \textbf{precision} and \textbf{recall}, under a criterion where a predicted span was deemed correct if it exhibited at least \textbf{80\% character-level overlap} with the ground truth annotation. The results are presented in Table~\ref{tab:field_metrics}.
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Field} & \textbf{Precision (\%)} & \textbf{Recall (\%)} \\
+\hline
+Recording Date       & 97 & 94 \\
+Document Number      & 89 & 87 \\
+Book Number          & 96 & 76 \\
+Page Number          & 88 & 70 \\
+Document Date        & 52 & 60 \\
+Effective Date       & 83 & 75 \\
+Signature Date       & 40 & 53 \\
+Tax Amount           & 84 & 57 \\
+Sales Price          & 56 & 80 \\
+Assessor's Parcel No.& 99 & 82 \\
+Buyer Address        & 92 & 74 \\
+Property Address     & 85 & 72 \\
+Seller Name          & 75 & 70 \\
+Seller Organization  & 78 & 73 \\
+Buyer Name           & 70 & 72 \\
+Buyer Organization   & 81 & 79 \\
+\hline
+\end{tabular}
+\caption{Field-wise Precision and Recall on a 1,965-document Test Set}
+\label{tab:field_metrics}
+\end{table}
+
+\subsection{In-Domain Accuracy: Trained Document Subtypes}
+
+To assess the model's performance in familiar contexts, a separate evaluation was conducted on a subset of \textbf{998 deed documents} representing the same subtypes the model was trained on (e.g., warranty deeds and statutory warranty deeds). The goal of this experiment was to measure the system’s ceiling performance in conditions where the layout and language patterns are well-represented in the training data.
+
+\vspace{2mm}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Field Cluster} & \textbf{Docs} & \textbf{\# Fields} & \textbf{Total Fields} & \textbf{Total Errors} & \textbf{Overall Accuracy} \\
+\hline
+
+Recording Info              & 998 & 4  & 2619 & 426  & 84\% \\
+Doc/Effective/Sign Date     & 998 & 3  & 1124 & 880  & 22\% \\
+Taxes                       & 998 & 4  & 860  & 240  & 72\% \\
+Sales Price                 & 998 & 1  & 743  & 272  & 63\% \\
+APN                         & 998 & 1  & 688  & 67   & 90\% \\
+Property Address            & 998 & 5  & 451  & 126  & 72\% \\
+Buyer Address               & 998 & 5  & 864  & 199  & 77\% \\
+Buyer Name                  & 998 & 10 & 1097 & 269  & 75\% \\
+Seller Name                 & 998 & 10 & 1090 & 180  & 83\% \\
+\hline
+\end{tabular}
+\caption{Field Accuracy Report for In-Domain Deed Subtypes (998 documents)}
+\label{tab:in_domain_accuracy}
+\end{table}
+
+\subsection{Generalization Accuracy: Unseen Document Subtypes}
+
+Table~\ref{tab:out_of_domain_accuracy} summarizes the model’s performance on \textbf{963 deed documents} belonging to document subtypes not present in the training set. These include special warranty deeds, vendor lien variants, and jurisdiction-specific formats.
+
+\vspace{2mm}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Field Cluster} & \textbf{Docs} & \textbf{\# Fields} & \textbf{Total Fields} & \textbf{Total Errors} & \textbf{Overall Accuracy} \\
+\hline
+Document Header             & 963 & 1  & 963  & 962  & 0\% \\
+Recording Info              & 963 & 4  & 2774 & 616  & 78\% \\
+Doc/Effective/Sign Date     & 963 & 3  & 1029 & 953  & 7\% \\
+Taxes                       & 963 & 4  & 615  & 181  & 71\% \\
+Sales Price                 & 963 & 1  & 285  & 165  & 42\% \\
+APN                         & 963 & 1  & 597  & 131  & 78\% \\
+Property Address            & 963 & 5  & 420  & 168  & 60\% \\
+Buyer Address               & 963 & 5  & 798  & 295  & 63\% \\
+Buyer Name                  & 963 & 10 & 1042 & 504  & 52\% \\
+Seller Name                 & 963 & 10 & 1076 & 586  & 46\% \\
+
+\hline
+\end{tabular}
+\caption{Condensed Field Accuracy Report for Unseen Deed Subtypes (963 documents)}
+\label{tab:out_of_domain_accuracy}
+\end{table}
+
+\subsection{Interpretation}
+
+As evident from Table~\ref{tab:out_of_domain_accuracy}, there is a clear decline in accuracy across all field clusters when the model is applied to deed subtypes it was not trained on. This decline is especially pronounced in fields such as \textit{Buyer Name} and \textit{Seller Name}, which are typically considered structurally consistent and straightforward to extract.  \\
+
+The performance drop reinforces the observation that different deed types exhibit significant structural and linguistic variation — including changes in field positioning, label phrasing, and overall layout. These differences undermine the generalizability of models trained solely on a narrow set of subtypes. \\
+
+Fortunately, this limitation can be mitigated through a relatively simple and scalable solution: extending the training dataset to include a broader range of deed subtypes. Retraining or fine-tuning the existing model on this expanded corpus would likely yield substantial improvements in cross-subtype generalization, enabling more consistent performance in production-scale deployments.
+
+\subsection{LLM-Based Benchmarking Approach}
+
+In parallel with the BERT-based hybrid pipeline, a second benchmark was established using a fully LLM-driven architecture to evaluate potential upper bounds in accuracy and generalizability. This alternative approach leveraged the \texttt{gpt-4o-mini} API to perform end-to-end field extraction. The model was prompted using carefully engineered, highly detailed instructions that guided it through both OCR and information extraction tasks. \\
+
+Unlike the BERT pipeline, which depended on Azure OCR for text recognition and a hybrid architecture for downstream parsing, the LLM-based method handled raw images directly. Post-processing steps—such as normalization, span cleaning, and field standardization—were still carried out using custom deterministic logic to ensure format consistency. \\
+
+The initial hypothesis was that a general-purpose LLM would outperform a task-specific BERT model, particularly on fields requiring inference, disambiguation, or semantic reasoning—owing to its broader contextual understanding and built-in language priors. In essence, the model was expected to apply "common sense" to real-world document structures, even under layout or phrasing variations. \\
+
+In addition to its semantic strengths, the LLM-based approach offered a notable operational advantage: \textbf{no model training or fine-tuning was required}. This significantly reduced development complexity and enabled rapid prototyping across new document types or jurisdictions without requiring annotated data. \\
+
+However, a known limitation of this approach was the operational cost. On average, the LLM-based system incurred a cost of approximately \textbf{0.2 cents per document}, which is roughly 4--5 times higher than the hybrid approach. While this cost is within acceptable bounds for low-volume use cases, it becomes a significant constraint at enterprise scale (e.g., 10,000+ documents per day). \\
+
+The empirical results of this LLM-based benchmark are discussed as follows.
+
+\subsection{LLM Performance on Trained Deed Subtypes}
+
+To ensure a fair comparison against the BERT-based system, the LLM approach was also evaluated on the same 594 of the 990 deed documents representing subtypes the model was trained on. Table~\ref{tab:llm_accuracy_trained} presents the results, aggregated by field cluster.
+
+\vspace{2mm}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Cluster Name} & \textbf{Docs} & \textbf{\# Fields} & \textbf{Total Fields} & \textbf{Total Errors} & \textbf{Overall Accuracy} \\
+\hline
+Recording Info       & 594 & 4  & 1567 & 544 & 65\% \\
+Date                 & 594 & 3  & 666  & 666 & 0\%  \\
+Sales Price          & 594 & 1  & 310  & 57  & 82\% \\
+APN                  & 594 & 1  & 426  & 70  & 84\% \\
+Buyer Address        & 594 & 5  & 3556 & 801 & 77\% \\
+Property Address     & 594 & 5  & 1199 & 610 & 49\% \\
+Buyer Name           & 594 & 10 & 2943 & 1002 & 66\% \\
+Seller Name          & 594 & 10 & 1649 & 423  & 74\% \\
+\hline
+\end{tabular}
+\caption{LLM-Based Extraction Accuracy by Field Cluster on Trained Deed Subtypes (594 documents)}
+\label{tab:llm_accuracy_trained}
+\end{table}
+
+\subsection{Interpretation}
+
+As shown in Table~\ref{tab:llm_accuracy_trained}, the LLM-based system achieved accuracy that was \textbf{comparable to or better than} the hybrid BERT-based approach across most field clusters. In particular, fields such as \textit{Sales Price}, \textit{APN}, \textit{Buyer Address}, and \textit{Seller Name} exhibited strong performance without any model-specific training or fine-tuning. \\
+
+The most notable exception was the \textit{Property Address} field, which saw a significant number of errors. However, these were predominantly due to issues in the post-processing logic—such as partial span matching and improper normalization—rather than model inference. These are deterministic problems that can be readily corrected with improved pattern matching and heuristics. As expected, the LLM's ability to generalize and reason over unstructured text compensated effectively for the lack of training data.
+
+
+\subsection{LLM Performance on Unseen Deed Subtypes}
+
+To evaluate the generalizability of the LLM-based system beyond the training distribution, it was also tested on \textbf{487 documents} from deed subtypes not represented in the original training set. Table~\ref{tab:llm_accuracy_unseen} summarizes the results, reflecting the model's zero-shot performance across structurally unfamiliar document types.
+
+\vspace{2mm}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Cluster Name} & \textbf{Docs} & \textbf{\# Fields} & \textbf{Total Fields} & \textbf{Total Errors} & \textbf{Overall Accuracy} \\
+\hline
+Document Header / Code     & 487 & 2  & 974  & 513  & 47\% \\
+Recording Info             & 487 & 4  & 1381 & 701  & 49\% \\
+Dates (Eff./Sign./Doc.)    & 487 & 3  & 544  & 544  & 0\%  \\
+Sales Price                & 487 & 1  & 167  & 122  & 27\% \\
+APN                        & 487 & 1  & 318  & 102  & 68\% \\
+Buyer Address              & 487 & 5  & 2578 & 718  & 72\% \\
+Property Address           & 487 & 5  & 1227 & 586  & 52\% \\
+Buyer Name                 & 487 & 10 & 2060 & 1141 & 45\% \\
+Seller Name                & 487 & 10 & 1289 & 545  & 58\% \\
+\hline
+
+\end{tabular}
+\caption{LLM-Based Extraction Accuracy by Field Cluster on Unseen Deed Subtypes (487 documents)}
+\label{tab:llm_accuracy_unseen}
+\end{table}
+
+\subsection{Interpretation}
+
+The results presented in Table~\ref{tab:llm_accuracy_unseen} are both noteworthy and somewhat counterintuitive. Despite the expectation that a generative LLM—unconstrained by task-specific training—would generalize effectively to unseen document formats, the model \textbf{underperformed compared to the hybrid BERT-based pipeline} across most fields. This was unexpected, given that transformer-based LLMs are typically celebrated for their ability to handle novel contexts using language priors and reasoning capabilities. \\
+
+This outcome suggests that the deed subtypes excluded from training may exhibit \textbf{inherently higher structural complexity or linguistic ambiguity}, making reliable extraction more challenging even for a general-purpose model. \\
+
+Crucially, the hybrid BERT-based architecture retains a key advantage in such settings: \textbf{it can be retrained or fine-tuned on these specific document types} to improve accuracy, offering a clear path to performance enhancement. In contrast, LLMs such as \texttt{gpt-4o-mini} are opaque and closed-source—offering limited avenues for task-specific adaptation beyond prompt engineering. This significantly constrains their utility when accuracy at scale is required. \\
+
+It is important to note that this evaluation was conducted on a representative subset of the same documents used to benchmark the hybrid model, ensuring a fair comparison. The use of a subset (487 documents) was necessitated by hardware constraints, but the field composition and document types were held consistent across both systems.
+
+
+\bibliographystyle{IEEEtran} 
+\bibliography{references}
 
 
 \end{document}
