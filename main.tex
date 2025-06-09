@@ -1,4 +1,14 @@
 \documentclass{article}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip}
+
+\tikzstyle{process} = [rectangle, rounded corners, minimum width=4cm, minimum height=1.4cm, text centered, text width=4cm, draw=black, fill=blue!10]
+\tikzstyle{arrow} = [thick,->,>=stealth]
+
+
 \usepackage{graphicx} % Required for inserting images
 \usepackage{multicol}
 \usepackage{listings}
@@ -14,7 +24,7 @@
   tabsize=2
 }
 
-\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+%\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage[a4paper, margin=1.5in]{geometry}
@@ -52,13 +62,13 @@ County recorders, legal firms, and title insurance companies rely on accurate in
 
 Automating the extraction of structured data from real estate documents presents several critical challenges, both in terms of data quality and operational feasibility. \\
 
-A primary obstacle lies in the nature of the source files—most documents are scanned images with poor resolution, skew, and inconsistent formatting. Document layouts vary significantly across counties, time periods, and document types, making reliable text extraction difficult. However, this challenge is largely mitigated by modern deep learning-based OCR tools such as Azure OCR, which are capable of handling noisy, irregular scans at a relatively low cost. \\
+A primary obstacle lies in the nature of the source files—most documents are scanned images with poor resolution, skew, and inconsistent formatting. Document layouts vary significantly across counties, time periods, and document types, making reliable text extraction difficult. However, this challenge is largely mitigated by modern deep learning-based OCR tools such as Azure OCR, which are capable of handling noisy, irregular scans at a relatively low cost \cite{azureocr}. \\
 
 The second major challenge stems from the unstructured, legal nature of the content. Deeds and mortgages often contain domain-specific terminology, complex phrasing, and high variability in how key information is presented. This makes the consistent identification and extraction of fields like party names, addresses, or legal descriptions a non-trivial task. \\
 
-With the advent of generative large language models (LLMs), it may seem natural to apply them to such problems. Indeed, LLMs demonstrate strong capabilities in understanding and summarising unstructured text. However, their use in high-volume legal data pipelines introduces serious concerns. Hallucination—the generation of text not present in the source—is an inherent risk, especially for long documents where key information may be scattered across multiple pages. LLMs also struggle with retaining factual accuracy across large contexts, such as 20-page mortgage documents. \\
+With the advent of generative large language models (LLMs), it may seem natural to apply them to such problems. Indeed, LLMs demonstrate strong capabilities in understanding and summarising unstructured text. However, their use in high-volume legal data pipelines introduces serious concerns. Hallucination—the generation of text not present in the source—is an inherent risk, especially for long documents where key information may be scattered across multiple pages \cite{ji2023survey}. LLMs also struggle with retaining factual accuracy across large contexts, such as 20-page mortgage documents. \\
 
-Moreover, the cost of deploying LLMs at scale is prohibitive. Whether accessed via commercial APIs or hosted in-house, their compute requirements and token-based pricing far exceed acceptable industry thresholds. For context, the standard processing budget for a mortgage document is approximately 0.5 cents. Processing 10,000 multi-page documents daily using LLMs would significantly surpass this limit, making them unsuitable for core field extraction in production settings. \\
+Moreover, the cost of deploying LLMs at scale is prohibitive. Whether accessed via commercial APIs or hosted in-house, their compute requirements and token-based pricing far exceed acceptable industry thresholds \cite{openai2024pricing}. For context, the standard processing budget for a mortgage document is approximately 0.2 cents. \cite{bpodataentry} Processing 10,000 multi-page documents daily using LLMs would significantly surpass this limit, making them unsuitable for core field extraction in production settings. \\
 
 \subsection{Project Aim and Scope}
 
@@ -170,24 +180,197 @@ Due to this level of variability, rule-based extraction methods are limited in t
 Machine learning-based techniques offer a more robust alternative, particularly for extracting fields such as buyer and seller names and addresses, which exhibit a high degree of variation in phrasing and structure. By learning patterns from data rather than relying on fixed templates, ML-based models are better equipped to handle diverse expressions of the same information and adapt to new, unseen document formats.
 
 
-\subsection{Model Selection for Named Entity Recognition}
+\subsection{Model Architectures for Named Entity Recognition}
 
-Named Entity Recognition (NER) is a token-level classification task that aims to identify and label key entities in unstructured text. In the context of real estate deeds, this includes fields such as names, addresses, dates, and parcel identifiers. Given the wide variation in how such entities are expressed, selecting an appropriate NER model is critical. \\
+Named Entity Recognition (NER) is a token-level sequence labeling task. It requires the model to capture both local and global context, maintain consistency across labels, and generalize well to linguistic variations. This section traces the evolution of NER models—from early sequential neural networks to modern transformer-based architectures—highlighting how representations of words and context modeling have progressed in tandem.
 
-Traditional approaches to NER include statistical models like Conditional Random Fields (CRFs), \cite{lafferty2001conditional} which rely on handcrafted features and perform well when entity boundaries are predictable. However, they struggle to generalize to linguistically diverse inputs without extensive feature engineering. \\
+\paragraph{Recurrent Neural Networks.}
+Recurrent Neural Networks (RNNs) are designed to process sequential data by maintaining a hidden state that captures information from prior time steps. At each time step $t$, the hidden state $h_t$ is updated as:
 
-Recurrent neural network-based models, such as Bidirectional LSTMs (BiLSTMs) \cite{huang2015bidirectional}, improved performance by learning contextual representations of tokens in sequence. While BiLSTMs capture dependencies in both directions, they are inherently sequential, which limits their scalability and ability to model long-range dependencies effectively. \\
+\[
+h_t = \tanh(W_{hh} h_{t-1} + W_{xh} x_t + b)
+\]
 
-Transformer-based models have since become the state-of-the-art in NER, thanks to their ability to model global context using self-attention. These models process all tokens in parallel and weigh relationships between them dynamically, making them well-suited for complex, unstructured language like that found in legal documents. \\
+where $x_t$ is the input vector, typically a \emph{word embedding}, and $W_{hh}, W_{xh}$ are learned weight matrices. This formulation allows RNNs to model dependencies in a sequence. However, their training is hindered by vanishing and exploding gradients \cite{bengio1994learning}, which make it difficult to capture long-range dependencies.
 
-Among transformer-based models, BERT (Bidirectional Encoder Representations from Transformers) \cite{devlin2018bert} has consistently achieved strong performance on NER benchmarks. BERT is pre-trained on large corpora using masked language modeling and is particularly effective at understanding the contextual meaning of words in varying syntactic and semantic environments. \\
+\paragraph{Word Embeddings: Motivation and Foundation}
+
+To feed words into models like RNNs, we must first convert them into dense vector representations. One-hot encodings are sparse and fail to capture semantic similarity. Word embeddings address this by mapping each word $w_i$ to a continuous vector $\mathbf{e}_i \in \mathbb{R}^d$, such that similar words (e.g., \texttt{bank} and \texttt{money}) have closer representations.
+
+\paragraph{Continuous Bag of Words Architecture}
+
+The Continuous Bag of Words (CBOW) model, a precursor to neural sequence models, learns embeddings by predicting a target word from its surrounding context \cite{mikolov2013efficient}. Although effective in capturing word-level semantics, CBOW operates on bag-of-words assumptions—ignoring word order—and produces context-independent embeddings.
+
+These embeddings were essential enablers for the next wave of models—sequential architectures that process word vectors in context-aware ways.
+
+\paragraph{Long Short-Term Memory (LSTM).}
+LSTM networks mitigate RNN limitations by introducing gating mechanisms that regulate information flow. Each LSTM cell maintains both a memory state $c_t$ and a hidden state $h_t$:
+
+\begin{align*}
+f_t &= \sigma(W_f x_t + U_f h_{t-1} + b_f) \quad \text{(forget gate)} \\
+i_t &= \sigma(W_i x_t + U_i h_{t-1} + b_i) \quad \text{(input gate)} \\
+o_t &= \sigma(W_o x_t + U_o h_{t-1} + b_o) \quad \text{(output gate)} \\
+\tilde{c}_t &= \tanh(W_c x_t + U_c h_{t-1} + b_c) \quad \text{(candidate update)} \\
+c_t &= f_t \odot c_{t-1} + i_t \odot \tilde{c}_t \\
+h_t &= o_t \odot \tanh(c_t)
+\end{align*}
+
+The use of word embeddings as input enables LSTMs to leverage distributional semantics while learning temporal dependencies. However, traditional LSTMs only consider past context.
+
+\paragraph{Bidirectional LSTMs.}
+To incorporate both past and future context, Bidirectional LSTMs (BiLSTMs) \cite{huang2015bidirectional} process the sequence in forward and backward directions. For each token, the final representation is the concatenation of both hidden states:
+
+\[
+h_t = \text{concat}(\overrightarrow{h}_t, \overleftarrow{h}_t)
+\]
+
+This dual perspective is particularly useful in NER, where the meaning of a word often depends on its neighbors. BiLSTMs use pretrained word embeddings as input, allowing the model to benefit from both semantic priors and contextual dynamics.
+
+\paragraph{BiLSTM-CRF Architecture.}
+While BiLSTMs provide rich contextualized representations for each token, their output at each timestep is typically passed through a softmax classifier to predict the entity label independently. This approach ignores dependencies between labels, which are crucial in sequence labeling tasks like NER. \\
+
+To address this, a Conditional Random Field (CRF) layer is often placed on top of the BiLSTM outputs \cite{lample2016neural}. The CRF considers the joint probability of the entire label sequence rather than making per-token decisions. This allows it to enforce valid label transitions and discourage implausible ones—such as assigning the tag sequence \texttt{[B-ORG, I-PER]} which violates BIO tagging conventions. \\
+
+Formally, let $X = (x_1, x_2, \dots, x_n)$ be the input sequence and $Y = (y_1, y_2, \dots, y_n)$ the sequence of predicted labels. The BiLSTM outputs emission scores $s_t(y_t)$ for each token $t$, and the CRF defines a transition score $T_{y_{t-1}, y_t}$ between adjacent labels. The total score for a sequence is: \\
+
+\[
+\text{Score}(X, Y) = \sum_{t=1}^{n} \left( T_{y_{t-1}, y_t} + s_t(y_t) \right)
+\]
+
+During training, the CRF maximizes the log-probability of the correct label sequence by normalizing over all possible sequences:
+
+\[
+\log P(Y \mid X) = \text{Score}(X, Y) - \log \sum_{Y'} \exp(\text{Score}(X, Y'))
+\]
+
+At inference time, the most likely label sequence is decoded using the Viterbi algorithm. This combination—BiLSTM for context and CRF for structure—enables both fine-grained representation and global label coherence, making it especially effective in legal and structured document NER tasks. \\
+
+\paragraph{Limitations of Recurrent Models.}
+Despite their historical success, RNNs and LSTM-based models suffer from multiple limitations that hinder their scalability and effectiveness in industrial settings. \\
+
+\textbf{1. Sequential Bottleneck.}
+RNNs and LSTMs are inherently sequential: the hidden state at time $t$ depends on the computation of all previous timesteps. This dependency chain makes it impossible to parallelize token computations across a sequence. Even with optimized hardware like GPUs, this results in poor throughput and latency—especially problematic for long legal documents often encountered in OCR pipelines. \\
+
+\textbf{2. Gradient Instability.}
+While LSTMs alleviate the vanishing and exploding gradient problem through gating mechanisms and memory cells, they do not eliminate it entirely. As sequence length increases, gradients may still decay or amplify through multiple layers and timesteps, leading to unstable or ineffective learning \cite{pascanu2013difficulty}. This is particularly noticeable in very deep LSTM stacks or when processing long-range dependencies beyond a few hundred tokens. \\
+
+\textbf{3. Limited Long-Range Modeling.}
+Although BiLSTMs allow access to both past and future context, they struggle to model truly long-distance dependencies. The memory of earlier tokens fades as the sequence grows longer, and fixed-size hidden states limit the expressiveness of token representations over extended contexts. \\
+
+\textbf{4. Static Context Windows.}
+Even when bidirectional, LSTMs apply the same computation at every step, without dynamically weighting the importance of other tokens. This lack of adaptive attention prevents the model from focusing on highly relevant but distant words, a common need in entity extraction from dense legal language. \\
+
+These limitations—combined with poor parallelism—motivated the shift toward transformer architectures, which offer a more scalable and flexible framework for learning contextual dependencies across entire sequences.
 
 
-One defining characteristic of BERT is its ability to process text bidirectionally. Unlike models that read left-to-right (e.g., GPT), bidirectional models consider both the left and right context of each token. For example, understanding whether "Jordan" refers to a person or a location often depends on the surrounding words on both sides. This bidirectionality is critical in NER, where the correct interpretation of a token frequently relies on full sentence context. \\
 
-Given the diversity and inconsistency of legal language in deed documents, a transformer-based model with bidirectional attention offers a strong foundation for robust field extraction. The specific choice of architecture is discussed in detail in the following section. \\
+\paragraph{Transformers and Contextual Representations.}
 
-A more detailed explanation of BERT's architecture and its adaptation to NER tasks is provided in Section~\ref{sec:bert}.
+Transformers \cite{vaswani2017attention} were introduced to overcome the key limitations of recurrent architectures—particularly their sequential processing bottleneck and difficulty modeling long-range dependencies. Rather than relying on recurrence, transformers employ a self-attention mechanism that enables each token in a sequence to directly attend to every other token, regardless of their position. This allows for efficient, parallelizable computation and rich global context modeling.
+
+\vspace{2mm}
+\noindent\textbf{Input Representation.}  
+Let $x_1, x_2, \dots, x_n$ denote the input token sequence. Each token is mapped to a continuous embedding vector $\mathbf{e}_i \in \mathbb{R}^d$. However, since transformers are permutation-invariant by design, positional information must be explicitly injected. This is achieved by adding a positional encoding $\mathbf{p}_i$ to each embedding, forming the layer input:
+
+\[
+\mathbf{z}_i^{(0)} = \mathbf{e}_i + \mathbf{p}_i
+\]
+
+The positional encodings $\mathbf{p}_i$ can be either fixed (e.g., sinusoidal) or learned during training.
+
+\vspace{2mm}
+\noindent\textbf{Self-Attention Mechanism.}  
+The core innovation of the transformer is its self-attention layer. Each input vector $\mathbf{z}_i$ is linearly transformed into three components:
+
+\[
+\mathbf{q}_i = \mathbf{z}_i W^Q, \quad \mathbf{k}_i = \mathbf{z}_i W^K, \quad \mathbf{v}_i = \mathbf{z}_i W^V
+\]
+
+where $W^Q, W^K, W^V \in \mathbb{R}^{d \times d_k}$ are learned projection matrices. These define:
+\begin{itemize}
+    \item \textbf{Query} $\mathbf{q}_i$: what the token seeks from others,
+    \item \textbf{Key} $\mathbf{k}_j$: how relevant another token is,
+    \item \textbf{Value} $\mathbf{v}_j$: the content to contribute if deemed relevant.
+\end{itemize}
+
+The relevance between tokens $i$ and $j$ is quantified by their scaled dot-product:
+
+\[
+\alpha_{ij} = \frac{\exp\left(\frac{\mathbf{q}_i^\top \mathbf{k}_j}{\sqrt{d_k}}\right)}{\sum_{j'=1}^{n} \exp\left(\frac{\mathbf{q}_i^\top \mathbf{k}_{j'}}{\sqrt{d_k}}\right)}
+\]
+
+The output for position $i$ is then a weighted sum over all value vectors:
+
+\[
+\text{Attention}(\mathbf{q}_i, K, V) = \sum_{j=1}^{n} \alpha_{ij} \mathbf{v}_j
+\]
+
+Or compactly, in matrix form:
+
+\[
+\text{Attention}(Q, K, V) = \text{softmax}\left( \frac{QK^\top}{\sqrt{d_k}} \right)V
+\]
+
+\vspace{2mm}
+\noindent\textbf{Layer Composition and Contextualization.}  
+Each transformer encoder layer comprises:
+\begin{enumerate}
+    \item \textbf{Multi-head self-attention:} Multiple parallel attention heads learn different contextual subspaces.
+    \item \textbf{Feed-forward network (FFN):} A position-wise dense network applies non-linearity and transformation independently at each token.
+\end{enumerate}
+
+Residual connections and layer normalization are applied after both subcomponents to stabilize training:
+
+\[
+\text{LayerNorm}(X + \text{Attention}(X)) \rightarrow \text{LayerNorm}(X + \text{FFN}(X))
+\]
+
+By stacking $L$ such encoder blocks, each token representation becomes deeply contextualized—encoding not only its identity but its role within the full sentence.
+
+\vspace{3mm}
+\noindent\textbf{Advantages over RNNs.}  
+Transformers offer several advantages compared to recurrent models:
+
+\begin{itemize}
+    \item \textbf{Parallelism:} Unlike RNNs/LSTMs, which must process tokens sequentially, transformers compute all token representations in parallel.
+    \item \textbf{Global Dependency Modeling:} Self-attention allows any token to directly attend to any other, enabling effective modeling of long-range dependencies.
+    \item \textbf{Gradient Stability:} Transformers avoid the vanishing/exploding gradient problem inherent in long unrolled RNNs, supporting deeper networks.
+\end{itemize}
+
+These properties make transformers highly scalable and well-suited for modern hardware acceleration.
+
+\vspace{3mm}
+\paragraph{Choosing BERT for NER.}
+
+Among transformer-based models, we adopt BERT (Bidirectional Encoder Representations from Transformers) \cite{devlin2018bert}, which is pre-trained on large unlabeled corpora using two self-supervised objectives:
+
+\begin{itemize}
+    \item \textbf{Masked Language Modeling (MLM):} Randomly masks 15\% of tokens in each sequence and trains the model to predict them from context, encouraging deep bidirectional understanding.
+    \item \textbf{Next Sentence Prediction (NSP):} Predicts whether two input sentences follow each other in the corpus, helping the model learn inter-sentence relationships.
+\end{itemize}
+
+BERT’s defining feature is its \emph{bidirectional self-attention}, which allows it to condition on both the left and right context when encoding any token. For example, in the sentence:
+
+\begin{quote}
+    \textit{"Jordan gave a lecture on Middle Eastern politics."}
+\end{quote}
+
+the word \textit{"Jordan"} can refer to either a person or a country. BERT uses the surrounding phrase \textit{"Middle Eastern politics"} to disambiguate it as a geopolitical entity—something unidirectional models like GPT cannot do during encoding.
+
+\vspace{3mm}
+\noindent\textbf{Context Window of BERT and Justification for Use.}  
+Despite its strengths, BERT has a maximum input sequence length of 512 tokens. This limitation arises from the \textbf{quadratic time and memory complexity} of self-attention: for a sequence of length $n$, attention involves computing an $n \times n$ similarity matrix.
+
+\begin{itemize}
+    \item BERT-base (512 tokens): $512^2 = 262{,}144$ pairwise comparisons per layer.
+    \item Longformer (4096 tokens): $4096^2 = 16{,}777{,}216$ comparisons—over 60x more.
+\end{itemize}
+
+While extended-context models like Longformer \cite{beltagy2020longformer} and BigBird \cite{zaheer2020bigbird} address this with sparse attention, they add architectural complexity and may incur slower inference. In our domain, such extended contexts are not strictly necessary—key fields like party names, parcel numbers, or legal descriptions tend to appear in concentrated spans.
+
+Thus, BERT provides an optimal balance between contextual power, inference efficiency, and implementation simplicity. Its strong empirical performance, robust pretraining, and extensive ecosystem support make it the most pragmatic choice for our named entity recognition pipeline on real estate documents.
+
+
 
 \subsection{Limitations of Using BERT Alone}
 
@@ -227,109 +410,111 @@ While BERT may not excel at extracting exact numeric values, it often correctly 
 
 \section{Design}
 
-\subsection{Word Embeddings: Motivation and Foundations}
+We begin by presenting two high-level flowcharts that capture the core structure of our system. These diagrams serve as a conceptual overview to illustrate how different modules interact and fit together. All steps are explained in depth in the subsequent Implementation chapter. \\
 
-Natural language is inherently symbolic and discrete, making it incompatible with numerical models unless converted into a continuous representation. Early approaches such as one-hot encoding represent words as binary vectors with dimensionality equal to the vocabulary size $V$. However, one-hot vectors suffer from two major drawbacks: they are sparse, and they encode no semantic similarity (e.g., the vectors for \texttt{dog} and \texttt{cat} are orthogonal despite their similarity).
+The first flowchart outlines the one-time model training process, which prepares the transformer-based Named Entity Recognition (NER) model using annotated training data. Although training may be repeated for fine-tuning or retraining on new datasets, it is not part of the routine inference cycle. \\
 
-To address this, we map each word $w_i$ to a dense, continuous embedding vector $\mathbf{e}_i \in \mathbb{R}^d$ such that semantically similar words are closer in Euclidean or cosine space.  One popular method to learn such embeddings is the Continuous Bag of Words (CBOW) model, proposed as part of Word2Vec.
+The second flowchart depicts the full inference pipeline. This is the central operational component of the system and is executed for each new document. It leverages most of the dataset construction pipeline but omits training and focuses on text extraction, entity prediction, and post-processing. \\
 
-\subsubsection{CBOW Architecture}
 
-The CBOW model is a shallow neural network that predicts a target word given its surrounding context words \cite{mikolov2013efficient}. Given a context window size $c$, the model takes the $2c$ words surrounding a center word $w_t$ and aims to predict $w_t$. The context words are encoded as one-hot vectors $\mathbf{x}_j \in \mathbb{R}^V$, which are projected into embeddings using a shared matrix $W \in \mathbb{R}^{V \times d}$:
+The figure below outlines the complete preprocessing and training workflow for our Named Entity Recognition (NER) model. It begins with annotated data ingestion and ends with the training loop. Each stage is designed to ensure label consistency, contextual tokenization, and compatibility with transformer-based architectures.
 
-\[
-\mathbf{v}_j = W^\top \mathbf{x}_j
-\]
 
-The hidden layer computes the average of these context embeddings:
+\begin{center}
+\begin{tikzpicture}[node distance=1cm and 1.2cm]
+% Row 1
+\node (json) [process] {Annotated JSON Input \\ (Text + Entity Spans)};
+\node (clean) [process, right=of json] {Text Cleaning \\ (Remove layout tokens, adjust spans)};
+% Row 2
+\node (spacy) [process, below=of clean] {Entity Correction via spaCy \\ (Fix partial spans)};
+\node (tokenise) [process, below=of json] {Tokenization \\ (Track tokens to spans)};
+% Row 3
+\node (iob) [process, below=of tokenise] {IOB Tagging \\ (Label tokens as B/I/O)};
+\node (chunk) [process, below=of spacy] {Chunking \\ (512 tokens per chunk, 50-token overlap)};
+% Row 4
+\node (df) [process, below=of chunk] {Create DataFrame \\ (input\_ids, attention\_mask, labels, is\_last)};
+\node (dataset) [process, below=of iob] {Convert to Dataset Object};
+% Row 5
+\node (train) [process, below=of dataset, xshift=2.25cm] {Run Training Loop};
 
-\[
-\mathbf{v}_{\text{context}} = \frac{1}{2c} \sum_{j=1}^{2c} \mathbf{v}_j
-\]
+% Arrows
+\draw [arrow] (json) -- (clean);
+\draw [arrow] (clean) -- (spacy);
+\draw [arrow] (spacy) -- (tokenise);
+\draw [arrow] (tokenise) -- (iob);
+\draw [arrow] (iob) -- (chunk);
+\draw [arrow] (chunk) -- (df);
+\draw [arrow] (df) -- (dataset);
+\draw [arrow] (dataset) -- (train);
+\end{tikzpicture}
+\end{center}
 
-This hidden vector is then projected to a vocabulary-sized output using another weight matrix $W' \in \mathbb{R}^{d \times V}$:
-
-\[
-\mathbf{u} = W'^\top \mathbf{v}_{\text{context}}, \quad \hat{y}_k = \frac{e^{u_k}}{\sum_{j=1}^{V} e^{u_j}}
-\]
-
-The model is trained to minimize the negative log-likelihood of the true center word $w_t$:
-
-\[
-\mathcal{L}_{\text{CBOW}} = -\log \hat{y}_{w_t}
-\]
-
-\subsection{Limitations of Static Embeddings}
-
-Although models like CBOW produce semantically meaningful embeddings, they are \emph{context-independent}—each word is assigned a single vector regardless of usage. For example, the word \texttt{bank} will have the same representation in both “river bank” and “bank account”.
-
-Furthermore, the CBOW model treats the input as a bag-of-words and averages the context embeddings, completely discarding word order. This makes it incapable of capturing syntactic patterns and structural dependencies, which are often essential in legal and formal documents.
-
-\subsection{Transformers: Contextual Embeddings through Self-Attention}
-
-To address these limitations, transformer models were introduced by Vaswani et al.~(2017), \cite{vaswani2017attention} providing a mechanism to learn context-sensitive embeddings without recurrence. In this architecture, every token can attend to all other tokens in the sequence using a mechanism called \emph{self-attention}, allowing it to dynamically weight the influence of different context words.
-
-\subsubsection{Input Representations}
-
-Given an input sequence of tokens $x_1, x_2, \dots, x_n$, each token is first mapped to an embedding $\mathbf{e}_i \in \mathbb{R}^d$. Since the transformer is permutation-invariant, positional information is added via a positional encoding vector $\mathbf{p}_i$, resulting in the input to the first layer:
-
-\[
-\mathbf{z}_i^{(0)} = \mathbf{e}_i + \mathbf{p}_i
-\]
-
-\subsection{Self-Attention Mechanism}
-
-The key innovation in transformers is the self-attention mechanism, which computes an output vector for each position by aggregating information from all other positions, weighted by their relevance.
-
-Each input vector $\mathbf{z}_i$ is linearly projected into three components:
-\[
-\mathbf{q}_i = \mathbf{z}_i W^Q, \quad \mathbf{k}_i = \mathbf{z}_i W^K, \quad \mathbf{v}_i = \mathbf{z}_i W^V
-\]
-
-where $W^Q, W^K, W^V \in \mathbb{R}^{d \times d_k}$ are learned weight matrices for queries, keys, and values respectively.
-
-These can be interpreted as follows:
+\paragraph{Step-by-Step Breakdown:}
 \begin{itemize}
-  \item \textbf{Query} ($\mathbf{q}_i$): What the token is asking about other tokens.
-  \item \textbf{Key} ($\mathbf{k}_j$): What a token offers in response.
-  \item \textbf{Value} ($\mathbf{v}_j$): The actual content contributed if deemed relevant.
+    \item \textbf{Annotated JSON Input:} Contains the full document text along with named entity spans.
+    \item \textbf{Text Cleaning:} Removes layout artifacts and updates entity span indices accordingly.
+    \item \textbf{Entity Correction via spaCy:} Uses heuristics to expand or fix annotation boundaries when partial matches are detected.
+    \item \textbf{Tokenization:} Breaks down the cleaned text into subword tokens, mapping original entity spans to token indices.
+    \item \textbf{IOB Tagging:} Assigns token-level labels following the standard Inside–Outside–Beginning (IOB) scheme.
+    \item \textbf{Chunking:} Splits tokenized sequences into 512-token segments with a 50-token overlap to preserve context.
+    \item \textbf{DataFrame Creation:} Stores token features such as input IDs, attention masks, token labels, and a document-end indicator.
+    \item \textbf{Dataset Conversion:} Converts the DataFrame into a dataset object suitable for batching and training.
+    \item \textbf{Training Loop:} Executes the fine-tuning of a transformer-based model using the prepared dataset.
 \end{itemize}
 
-The attention weight between token $i$ and token $j$ is given by the scaled dot product between their query and key vectors:
+\section*{Full Inference Pipeline}
 
-\[
-\alpha_{ij} = \frac{\exp\left(\frac{\mathbf{q}_i^\top \mathbf{k}_j}{\sqrt{d_k}}\right)}{\sum_{j'=1}^{n} \exp\left(\frac{\mathbf{q}_i^\top \mathbf{k}_{j'}}{\sqrt{d_k}}\right)}
-\]
+\begin{quote}
+\emph{This flowchart provides a high-level overview of the end-to-end inference pipeline. Each step is explained in further technical detail within the Implementation chapter.}
+\end{quote}
 
-The output for token $i$ is then computed as a weighted sum of value vectors:
 
-\[
-\text{Attention}(\mathbf{q}_i, K, V) = \sum_{j=1}^{n} \alpha_{ij} \mathbf{v}_j
-\]
 
-In matrix form, this becomes:
+\begin{center}
+\begin{tikzpicture}[node distance=1cm and 1.2cm]
+% Row 1
+\node (ocr) [process] {OCR on .tif Input \\ (extract text, insert layout tokens)};
+\node (prep) [process, right=of ocr] {Preprocessing Pipeline \\ (same as training, no labels)};
+% Row 2
+\node (loadmodel) [process, below=of prep] {Load Trained Model Weights};
+\node (inference) [process, below=of ocr] {Model Inference \\ (token classification)};
+% Row 3
+\node (merge) [process, below=of inference] {Merge Token Predictions \\ (map back to words)};
+\node (aggregate) [process, below=of loadmodel] {Aggregate Chunks per Document \\ (use is\_last\_chunk flag)};
+% Row 4
+\node (regex) [process, below=of aggregate] {Regex-based Field Extraction \\ (non-BERT fields)};
+\node (heuristics) [process, below=of merge] {Heuristic Post-Processing \\ (recover buyer address, normalize US format)};
+% Row 5
+\node (final) [process, below=of heuristics, xshift=2.25cm] {Field Normalization \\ (split names, addresses)};
 
-\[
-\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
-\]
+% Arrows
+\draw [arrow] (ocr) -- (prep);
+\draw [arrow] (prep) -- (loadmodel);
+\draw [arrow] (loadmodel) -- (inference);
+\draw [arrow] (inference) -- (merge);
+\draw [arrow] (merge) -- (aggregate);
+\draw [arrow] (aggregate) -- (regex);
+\draw [arrow] (regex) -- (heuristics);
+\draw [arrow] (heuristics) -- (final);
+\end{tikzpicture}
+\end{center}
 
-\subsection{Stacked Encoder Layers and Contextualization}
+\paragraph{Step-by-Step Breakdown:}
+\begin{itemize}
+    \item \textbf{OCR on .tif Input:} Runs optical character recognition on scanned images and injects layout tokens to preserve document structure.
+    \item \textbf{Preprocessing Pipeline:} Applies the same steps as in training (cleaning, tokenization, chunking), but omits label generation.
+    \item \textbf{Load Trained Model Weights:} Loads the pre-trained transformer model from saved checkpoint files for inference.
+    \item \textbf{Model Inference:} Feeds tokenized chunks into the model to obtain predicted entity labels.
+    \item \textbf{Merge Token Predictions:} Reconstructs full words from token predictions and maps token IDs back to text.
+    \item \textbf{Aggregate Chunks per Document:} Uses the \texttt{is\_last\_chunk} flag to concatenate predictions across document chunks.
+    \item \textbf{Regex-based Field Extraction:} Extracts structured fields not covered by BERT using pattern-based rules.
+    \item \textbf{Heuristic Post-Processing:} Applies logic to fill missing fields (e.g., buyer address recovery), and standardizes US address formats.
+    \item \textbf{Field Normalization:} Breaks composite fields like names and addresses into subcomponents (e.g., first, middle, last names; city, state, ZIP).
+\end{itemize}
 
-A transformer encoder consists of multiple stacked layers, each with two main components:
-\begin{enumerate}
-  \item Multi-head self-attention: runs multiple attention operations in parallel with independent projections.
-  \item Feed-forward network: applies two linear transformations with a non-linearity in between.
-\end{enumerate}
 
-Each layer also includes residual connections and layer normalization to facilitate gradient flow:
+\section{Implementation}
 
-\[
-\text{LayerNorm}(X + \text{Attention}(X)) \rightarrow \text{LayerNorm}(X + \text{FFN}(X))
-\]
-
-By stacking $L$ such encoder blocks, each token embedding becomes deeply contextualized—its final representation encodes rich semantic and syntactic information from the entire sequence.
-
-These contextual embeddings can then be fed into a task-specific head, such as a linear classifier for token classification in named entity recognition.
 
 \subsection{Fine-Tuning BERT for Named Entity Recognition}
 
@@ -387,6 +572,48 @@ The model is fine-tuned on a labelled dataset of 7,700 deed documents. The input
 At inference time, each token receives a predicted label. Subword labels are mapped back to words using a label aggregation strategy (e.g., taking the label of the first subtoken). Consecutive spans with \texttt{B-}/\texttt{I-} tags are grouped into field-level predictions and postprocessed into structured outputs.
 
 Field-level accuracy is measured using an overlap criterion—typically, a prediction is considered correct if it matches the ground truth with at least 80\% character-level overlap.
+
+\begin{lstlisting}[caption={End-to-End Structured Entity Extraction Pipeline}, label={lst:end_to_end_pipeline}, language=Python, frame=single]
+# Pseudocode for structured entity extraction pipeline
+
+Initialize empty predictions_df  # This will store final structured predictions
+Initialize empty list to accumulate document-level predictions
+
+for each row in df:
+    Extract token-level predictions and input IDs for the current chunk
+
+    # Convert predicted label indices to human-readable entity tags
+    mapped_labels = map(reverse_entity_mapping, raw_predictions)
+
+    # Identify entity spans using label boundaries (BIO tagging scheme)
+    # This function detects where a new entity starts and builds binary masks
+    # indicating the token positions that form each entity
+    entity_masks, entity_names = find_entities_in_text(mapped_labels)
+
+    # Reconstruct original entity strings from token IDs using binary masks
+    # For each mask, select the corresponding tokens, convert them to strings,
+    # and merge subword tokens (e.g., "New", "##ark" → "Newark")
+    entity_texts = show_sample(input_ids, entity_masks, entity_names)
+
+    for each (entity_type, entity_text) in entity_texts:
+        Append (entity_type, entity_text) to document-level predictions
+
+    # Once the final chunk of the document is reached,
+    # aggregate all extracted entity spans for the full document
+    if current chunk is last:
+        aggregated = aggregate_predictions(document-level predictions)
+        Create new row with image/document name and aggregated fields
+        Append row to predictions_df
+        Reset document-level predictions
+
+# Merge structured predictions with auxiliary metadata (e.g., recording details)
+predictions_df = predictions_df.merge(recording_details_df, on="filename")
+
+# Export or print results per document
+for each row in predictions_df:
+    Print document name and associated field-value pairs
+\end{lstlisting}
+
 
 \subsection{Labelled Dataset Format and Entity Alignment Pipeline}
 
@@ -1419,6 +1646,21 @@ This outcome suggests that the deed subtypes excluded from training may exhibit 
 Crucially, the hybrid BERT-based architecture retains a key advantage in such settings: \textbf{it can be retrained or fine-tuned on these specific document types} to improve accuracy, offering a clear path to performance enhancement. In contrast, LLMs such as \texttt{gpt-4o-mini} are opaque and closed-source—offering limited avenues for task-specific adaptation beyond prompt engineering. This significantly constrains their utility when accuracy at scale is required. \\
 
 It is important to note that this evaluation was conducted on a representative subset of the same documents used to benchmark the hybrid model, ensuring a fair comparison. The use of a subset (487 documents) was necessitated by hardware constraints, but the field composition and document types were held consistent across both systems.
+
+\section{Conclusion and Next Steps}
+
+This project presents a robust, scalable, and cost-efficient solution for automated information extraction from real estate deeds using a hybrid BERT + regex pipeline. Through extensive evaluation on 2,000 deed documents—across both trained and unseen deed subtypes—the system achieved accuracy broadly comparable to that of OpenAI’s GPT-4o Mini. However, a key advantage of the proposed approach lies in its adaptability: the BERT model can be fine-tuned on new document types, allowing performance to improve over time, whereas similar retraining flexibility is not feasible with GPT-based APIs. \\
+
+Cost is another major differentiator. GPT APIs incur charges on a per-token basis, causing costs to scale linearly with document length (approximately 2 cents per deed). In contrast, our hybrid pipeline—relying on Azure OCR and local model inference—achieves comparable performance at a much lower cost of approximately 0.1 cents per deed. \\
+
+Future work will involve training the same BERT model on additional deed subtypes to improve generalization, without maintaining separate models. However, when extending to structurally different documents such as mortgages, a separate model will be required due to the variation in field definitions. \\
+
+While the current system is a proof-of-concept, the next phase will focus on productionizing it for practical use by data entry operators. This includes developing a lightweight Flask-based user interface that allows users to upload batches of documents as ZIP files and receive structured outputs. The backend system will store metadata such as upload timestamp, user ID, raw OCR text, and final outputs in Excel format. \\
+
+Inference latency is a critical consideration. OCR throughput will be improved by issuing asynchronous API calls, while BERT inference will be accelerated using local GPUs with CUDA support. Scaling this system to other document types and increasing daily volume will require corresponding investments in hardware infrastructure. \\
+
+In summary, the proposed solution offers a high-accuracy, low-cost, and extensible framework for structured data extraction from unstructured legal documents. Testing is ongoing, but results to date indicate that the system is well-positioned for future deployment and scaling.
+
 
 
 \bibliographystyle{IEEEtran} 
